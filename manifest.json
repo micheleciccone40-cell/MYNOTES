@@ -1,0 +1,18 @@
+{
+  "name": "PadNotes Studio",
+  "short_name": "PadNotes",
+  "description": "Taccuino digitale per iPad, Apple Pencil e Desktop con annotazione PDF e Sync Google Drive",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0f172a",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
