@@ -554,7 +554,8 @@ export function App() {
           />
 
           {/* Document Centered Workspace with Continuous Vertical Scrolling */}
-          <div className="flex-1 overflow-auto bg-[#0a0b0e] px-4 sm:px-10 flex items-start justify-center">
+          <div className="flex-1 overflow-auto bg-[#0a0b0e] flex flex-col items-center">
+            <div className="min-w-fit px-4 sm:px-10 flex flex-col items-center w-full">
             <DocumentEditor
               pages={activeNotebook.pages}
               paperTemplate={activeNotebook.paperTemplate}
@@ -611,6 +612,7 @@ export function App() {
               canUndo={undoStack.length > 0}
               canRedo={redoStack.length > 0}
             />
+            </div>
           </div>
         </div>
       ) : (

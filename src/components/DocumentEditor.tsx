@@ -42,8 +42,10 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
 }) => {
   const [gestureToast, setGestureToast] = useState<string | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const initialPinchDistRef = useRef<number | null>(null);
-  const initialPinchZoomRef = useRef<number>(zoom);
+
+  // Single gesture controller for pinch-to-zoom
+  const pinchStartDistRef = useRef<number | null>(null);
+  const pinchStartZoomRef = useRef<number>(zoom);
   const isPinchingRef = useRef<boolean>(false);
 
   const showToast = (text: string) => {
@@ -51,21 +53,22 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
     setTimeout(() => setGestureToast(null), 1000);
   };
 
-  // Pinch-to-zoom & Trackpad gesture listeners
+  // Safari Gesture & Trackpad Wheel Listener
   useEffect(() => {
     const el = wrapperRef.current;
     if (!el) return;
 
+    // Safari iOS Gesture Event (smoothest native pinch)
     const handleGestureStart = (e: any) => {
       e.preventDefault();
-      initialPinchZoomRef.current = zoom;
+      pinchStartZoomRef.current = zoom;
       isPinchingRef.current = true;
     };
 
     const handleGestureChange = (e: any) => {
       e.preventDefault();
       if (!onChangeZoom) return;
-      const targetZoom = Number(Math.min(2.5, Math.max(0.5, initialPinchZoomRef.current * e.scale)).toFixed(2));
+      const targetZoom = Number(Math.min(2.5, Math.max(0.4, pinchStartZoomRef.current * e.scale)).toFixed(2));
       onChangeZoom(targetZoom);
       showToast(`🔍 ${Math.round(targetZoom * 100)}%`);
     };
@@ -77,12 +80,12 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
       }, 150);
     };
 
-    // Trackpad Pinch / Ctrl+Wheel zoom
+    // Trackpad Pinch & Ctrl+Wheel zoom
     const handleWheel = (e: WheelEvent) => {
-      if (e.ctrlKey && onChangeZoom) {
+      if ((e.ctrlKey || e.metaKey) && onChangeZoom) {
         e.preventDefault();
-        const delta = -e.deltaY * 0.005;
-        const targetZoom = Number(Math.min(2.5, Math.max(0.5, zoom + delta)).toFixed(2));
+        const delta = -e.deltaY * 0.003;
+        const targetZoom = Number(Math.min(2.5, Math.max(0.4, zoom + delta)).toFixed(2));
         onChangeZoom(targetZoom);
         showToast(`🔍 ${Math.round(targetZoom * 100)}%`);
       }
@@ -101,38 +104,38 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
     };
   }, [zoom, onChangeZoom]);
 
-  // Wrapper-level 2-finger touch listeners (works on margins and background)
-  const handleWrapperTouchStart = (e: React.TouchEvent) => {
+  // Touch fallback pinch-to-zoom (for standard touch events across Android/iOS)
+  const handleTouchStartWrapper = (e: React.TouchEvent) => {
     if (e.touches.length === 2) {
       const dist = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       );
-      initialPinchDistRef.current = dist;
-      initialPinchZoomRef.current = zoom;
+      pinchStartDistRef.current = dist;
+      pinchStartZoomRef.current = zoom;
       isPinchingRef.current = false;
     }
   };
 
-  const handleWrapperTouchMove = (e: React.TouchEvent) => {
-    if (e.touches.length === 2 && initialPinchDistRef.current && onChangeZoom) {
+  const handleTouchMoveWrapper = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchStartDistRef.current && onChangeZoom) {
       const currentDist = Math.hypot(
         e.touches[0].clientX - e.touches[1].clientX,
         e.touches[0].clientY - e.touches[1].clientY
       );
-      const diff = Math.abs(currentDist - initialPinchDistRef.current);
-      if (diff > 8) {
+      const diff = Math.abs(currentDist - pinchStartDistRef.current);
+      if (diff > 10) {
         isPinchingRef.current = true;
-        const scale = currentDist / initialPinchDistRef.current;
-        const targetZoom = Number(Math.min(2.5, Math.max(0.5, initialPinchZoomRef.current * scale)).toFixed(2));
+        const scale = currentDist / pinchStartDistRef.current;
+        const targetZoom = Number(Math.min(2.5, Math.max(0.4, pinchStartZoomRef.current * scale)).toFixed(2));
         onChangeZoom(targetZoom);
         showToast(`🔍 ${Math.round(targetZoom * 100)}%`);
       }
     }
   };
 
-  const handleWrapperTouchEnd = () => {
-    initialPinchDistRef.current = null;
+  const handleTouchEndWrapper = () => {
+    pinchStartDistRef.current = null;
     setTimeout(() => {
       isPinchingRef.current = false;
     }, 150);
@@ -141,19 +144,19 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
   return (
     <div
       ref={wrapperRef}
-      onTouchStart={handleWrapperTouchStart}
-      onTouchMove={handleWrapperTouchMove}
-      onTouchEnd={handleWrapperTouchEnd}
-      className="w-full flex flex-col items-center gap-10 py-6 select-text touch-pan-x touch-pan-y"
+      onTouchStart={handleTouchStartWrapper}
+      onTouchMove={handleTouchMoveWrapper}
+      onTouchEnd={handleTouchEndWrapper}
+      className="w-full flex flex-col items-center gap-10 py-6 select-text"
     >
-      {/* 2-Finger Gesture HUD Toast */}
+      {/* Zoom / Gesture Toast HUD */}
       {gestureToast && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-black/85 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-semibold shadow-2xl border border-white/20 flex items-center gap-2">
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-black/85 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-semibold shadow-2xl border border-white/20 flex items-center gap-2 animate-in fade-in duration-100">
           <span>{gestureToast}</span>
         </div>
       )}
 
-      {/* Floating iPad Quick Undo/Redo Thumb Buttons (in basso a sinistra fisso) */}
+      {/* Floating iPad Quick Undo/Redo Thumb Buttons */}
       <div className="fixed bottom-6 left-6 z-40 flex items-center gap-1.5 bg-black/70 backdrop-blur-md p-1.5 rounded-2xl border border-white/10 shadow-2xl pointer-events-auto">
         <button
           type="button"
@@ -161,7 +164,7 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
             e.stopPropagation();
             if (onUndo) {
               onUndo();
-              showToast('↩ Annulla (2 dita)');
+              showToast('↩ Annulla');
             }
           }}
           disabled={!canUndo}
@@ -179,7 +182,7 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
             e.stopPropagation();
             if (onRedo) {
               onRedo();
-              showToast('↪ Ripristina (3 dita)');
+              showToast('↪ Ripristina');
             }
           }}
           disabled={!canRedo}
@@ -207,12 +210,10 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
           onUpdatePage={(updates) => onUpdatePage(index, updates)}
           onAddStroke={(stroke) => onAddStroke(index, stroke)}
           onDeleteStroke={(strokeId) => onDeleteStroke(index, strokeId)}
-          onAddPageAfter={() => onAddPageAt(index + 1)}
           onUndo={onUndo}
           onRedo={onRedo}
           showToast={showToast}
           zoom={zoom}
-          onChangeZoom={onChangeZoom}
         />
       ))}
 
@@ -221,7 +222,7 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
         <button
           type="button"
           onClick={() => onAddPageAt(pages.length)}
-          className="flex items-center gap-2 px-5 py-2.5 bg-[#1a1c24] hover:bg-[#252834] text-slate-200 border border-[#2b2e3b] rounded-2xl text-xs font-semibold shadow-lg transition-all"
+          className="flex items-center gap-2 px-5 py-2.5 bg-[#1a1c24] hover:bg-[#252834] text-slate-200 border border-[#2b2e3b] rounded-2xl text-xs font-semibold shadow-lg transition-all active:scale-95"
         >
           <Plus className="w-4 h-4 text-blue-400" />
           <span>Aggiungi Nuova Pagina al Documento</span>
@@ -243,12 +244,10 @@ interface SingleDocumentPageProps {
   onUpdatePage: (updated: Partial<Page>) => void;
   onAddStroke: (stroke: Stroke) => void;
   onDeleteStroke: (strokeId: string) => void;
-  onAddPageAfter: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
   showToast: (msg: string) => void;
   zoom?: number;
-  onChangeZoom?: (zoom: number) => void;
 }
 
 const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
@@ -267,7 +266,6 @@ const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
   onRedo,
   showToast,
   zoom = 1,
-  onChangeZoom,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -276,16 +274,18 @@ const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
   const isDrawingRef = useRef<boolean>(false);
   const currentPointsRef = useRef<[number, number, number][]>([]);
 
-  // 2-Finger tap gesture tracking
+  // 2-Finger tap gesture tracking for Undo/Redo
   const touchStartTimeRef = useRef<number>(0);
   const touchStartCountRef = useRef<number>(0);
+  const touchMovedDistRef = useRef<number>(0);
+  const touchInitialPosRef = useRef<{ x: number; y: number } | null>(null);
 
   // Floating image selection
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const isDraggingImageRef = useRef<boolean>(false);
   const dragStartOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  // Redraw canvas
+  // Redraw canvas with high-fidelity strokes
   const redrawCanvas = useCallback((tempStroke?: Stroke) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -323,70 +323,47 @@ const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
     redrawCanvas();
   }, [page.width, page.height, redrawCanvas]);
 
-  // Touch gesture listeners: Pinch-to-zoom + 2-finger Undo
-  const pagePinchDistRef = useRef<number | null>(null);
-  const pagePinchZoomRef = useRef<number>(zoom);
-  const isPagePinchingRef = useRef<boolean>(false);
-
+  // 2-Finger Tap detection (Undo / Redo) without conflicting with zoom pinch
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
     touchStartCountRef.current = e.touches.length;
     touchStartTimeRef.current = Date.now();
-    isPagePinchingRef.current = false;
-
-    if (e.touches.length === 2) {
-      const dist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      pagePinchDistRef.current = dist;
-      pagePinchZoomRef.current = zoom;
+    touchMovedDistRef.current = 0;
+    if (e.touches.length > 0) {
+      touchInitialPosRef.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
     }
   };
 
   const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
-    if (e.touches.length === 2 && pagePinchDistRef.current && onChangeZoom) {
-      const currentDist = Math.hypot(
-        e.touches[0].clientX - e.touches[1].clientX,
-        e.touches[0].clientY - e.touches[1].clientY
-      );
-      const diff = Math.abs(currentDist - pagePinchDistRef.current);
-      if (diff > 8) {
-        isPagePinchingRef.current = true;
-        const scale = currentDist / pagePinchDistRef.current;
-        const targetZoom = Number(Math.min(2.5, Math.max(0.5, pagePinchZoomRef.current * scale)).toFixed(2));
-        onChangeZoom(targetZoom);
-        showToast(`🔍 ${Math.round(targetZoom * 100)}%`);
-      }
+    if (touchInitialPosRef.current && e.touches.length > 0) {
+      const dx = e.touches[0].clientX - touchInitialPosRef.current.x;
+      const dy = e.touches[0].clientY - touchInitialPosRef.current.y;
+      touchMovedDistRef.current = Math.hypot(dx, dy);
     }
   };
 
   const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
     const duration = Date.now() - touchStartTimeRef.current;
+    const moved = touchMovedDistRef.current;
 
-    // Only trigger undo/redo if the user was NOT pinching to zoom!
-    if (!isPagePinchingRef.current) {
-      if (touchStartCountRef.current === 2 && duration < 380 && e.touches.length === 0) {
-        if (onUndo) {
-          onUndo();
-          showToast('↩ Annulla (2 dita)');
-        }
-      } else if (touchStartCountRef.current === 3 && duration < 380 && e.touches.length === 0) {
-        if (onRedo) {
-          onRedo();
-          showToast('↪ Ripristina (3 dita)');
-        }
+    // Only trigger if fingers DID NOT drag/pinch (moved < 12px) and was a quick tap (< 350ms)
+    if (moved < 12 && duration < 350 && e.touches.length === 0) {
+      if (touchStartCountRef.current === 2 && onUndo) {
+        onUndo();
+        showToast('↩ Annulla (2 dita)');
+      } else if (touchStartCountRef.current === 3 && onRedo) {
+        onRedo();
+        showToast('↪ Ripristina (3 dita)');
       }
     }
 
-    if (e.touches.length < 2) {
-      pagePinchDistRef.current = null;
-      setTimeout(() => {
-        isPagePinchingRef.current = false;
-      }, 150);
-    }
     touchStartCountRef.current = 0;
+    touchInitialPosRef.current = null;
   };
 
+  // TRUE WORD COORDINATES CALCULATION:
+  // Since the canvas is visually scaled by CSS transform: scale(zoom),
+  // rect.width = page.width * zoom.
+  // Dividing (clientX - rect.left) by zoom yields the exact coordinate on the unscaled 820px sheet!
   const getCoordinates = (e: React.PointerEvent<HTMLCanvasElement>): [number, number, number] => {
     const canvas = canvasRef.current;
     if (!canvas) return [0, 0, 0.5];
@@ -399,96 +376,97 @@ const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     if (activeTool === 'text') return;
-    if (touchStartCountRef.current >= 2) return;
-    if (applePencilOnly && e.pointerType === 'touch') return;
 
-    (e.target as HTMLElement).setPointerCapture(e.pointerId);
-    const [x, y, pressure] = getCoordinates(e);
-
-    if (activeTool === 'eraser') {
-      isDrawingRef.current = true;
-      const strokeToErase = (page.strokes || []).slice().reverse().find(s => isPointNearStroke(x, y, s, 22));
-      if (strokeToErase) {
-        onDeleteStroke(strokeToErase.id);
-      }
+    // Apple Pencil Palm rejection
+    if (applePencilOnly && e.pointerType === 'touch') {
       return;
     }
 
-    if (['pen', 'highlighter', 'line', 'rect', 'circle'].includes(activeTool)) {
-      isDrawingRef.current = true;
-      currentPointsRef.current = [[x, y, pressure]];
-
-      const tempStroke: Stroke = {
-        id: 'temp',
-        tool: activeTool as any,
-        color: strokeColor,
-        size: strokeSize,
-        opacity: activeTool === 'highlighter' ? 0.48 : 1,
-        points: currentPointsRef.current
-      };
-      redrawCanvas(tempStroke);
-    }
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isDrawingRef.current) return;
-    if (applePencilOnly && e.pointerType === 'touch') return;
-
-    const [x, y, pressure] = getCoordinates(e);
-
+    // Eraser Tool
     if (activeTool === 'eraser') {
-      const strokeToErase = (page.strokes || []).slice().reverse().find(s => isPointNearStroke(x, y, s, 20));
-      if (strokeToErase) {
-        onDeleteStroke(strokeToErase.id);
+      const [x, y] = getCoordinates(e);
+      const hit = (page.strokes || []).find((s) => isPointNearStroke(x, y, s, 15));
+      if (hit) {
+        onDeleteStroke(hit.id);
       }
+      isDrawingRef.current = true;
       return;
     }
 
-    currentPointsRef.current.push([x, y, pressure]);
+    // Pen / Highlighter Drawing
+    isDrawingRef.current = true;
+    const coords = getCoordinates(e);
+    currentPointsRef.current = [coords];
 
     const tempStroke: Stroke = {
-      id: 'temp',
+      id: `stroke-temp-${Date.now()}`,
       tool: activeTool as any,
       color: strokeColor,
       size: strokeSize,
-      opacity: activeTool === 'highlighter' ? 0.48 : 1,
+      opacity: activeTool === 'highlighter' ? 0.48 : 1.0,
       points: currentPointsRef.current
     };
     redrawCanvas(tempStroke);
   };
 
-  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
+  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!isDrawingRef.current) return;
+
+    if (applePencilOnly && e.pointerType === 'touch') {
+      return;
+    }
+
+    const coords = getCoordinates(e);
+
+    if (activeTool === 'eraser') {
+      const [x, y] = coords;
+      const hit = (page.strokes || []).find((s) => isPointNearStroke(x, y, s, 15));
+      if (hit) {
+        onDeleteStroke(hit.id);
+      }
+      return;
+    }
+
+    currentPointsRef.current.push(coords);
+
+    const tempStroke: Stroke = {
+      id: `stroke-temp-${Date.now()}`,
+      tool: activeTool as any,
+      color: strokeColor,
+      size: strokeSize,
+      opacity: activeTool === 'highlighter' ? 0.48 : 1.0,
+      points: currentPointsRef.current
+    };
+    redrawCanvas(tempStroke);
+  };
+
+  const handlePointerUp = () => {
     if (!isDrawingRef.current) return;
     isDrawingRef.current = false;
-    try {
-      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch (_) {}
 
-    if (activeTool === 'eraser') return;
+    if (activeTool !== 'eraser' && currentPointsRef.current.length > 0) {
+      let finalPoints = currentPointsRef.current;
+      if (activeTool === 'highlighter') {
+        finalPoints = straightenHighlighterPoints(finalPoints);
+      }
 
-    if (currentPointsRef.current.length > 0) {
-      // Intelligently semi-straighten highlighter lines ("più o meno dritta")
-      const finalPoints = activeTool === 'highlighter'
-        ? straightenHighlighterPoints(currentPointsRef.current)
-        : [...currentPointsRef.current];
-
-      const finalStroke: Stroke = {
+      const newStroke: Stroke = {
         id: `stroke-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         tool: activeTool as any,
         color: strokeColor,
         size: strokeSize,
-        opacity: activeTool === 'highlighter' ? 0.48 : 1,
+        opacity: activeTool === 'highlighter' ? 0.48 : 1.0,
         points: finalPoints
       };
-      currentPointsRef.current = [];
-      onAddStroke(finalStroke);
+      onAddStroke(newStroke);
     }
+    currentPointsRef.current = [];
+    redrawCanvas();
   };
 
   const handleContentInput = () => {
-    if (richEditorRef.current) {
-      onUpdatePage({ contentHtml: richEditorRef.current.innerHTML });
-    }
+    if (!richEditorRef.current) return;
+    onUpdatePage({ contentHtml: richEditorRef.current.innerHTML });
   };
 
   const handleStartMoveImage = (e: React.PointerEvent, img: FloatingImage) => {
@@ -496,8 +474,8 @@ const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
     setSelectedImageId(img.id);
     isDraggingImageRef.current = true;
     dragStartOffsetRef.current = {
-      x: e.clientX - img.x,
-      y: e.clientY - img.y
+      x: e.clientX / zoom - img.x,
+      y: e.clientY / zoom - img.y
     };
   };
 
@@ -521,144 +499,164 @@ const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
     if (paperTemplate === 'ruled') return 'paper-ruled';
     if (paperTemplate === 'grid') return 'paper-grid';
     if (paperTemplate === 'dots') return 'paper-dots';
+    if (paperTemplate === 'dark-blank') return 'paper-dark-blank';
     if (paperTemplate === 'dark-ruled') return 'paper-dark-ruled';
     if (paperTemplate === 'dark-grid') return 'paper-dark-grid';
     return 'paper-blank';
   };
 
   return (
-    <div className="flex flex-col items-center group/page relative">
+    <div className="flex flex-col items-center group/page select-text">
       {/* Page Header Indicator */}
-      <div className="w-full max-w-[820px] flex items-center justify-between px-3 py-1 text-[11px] text-slate-500 font-mono">
+      <div
+        className="flex items-center justify-between text-[11px] text-slate-500 font-mono mb-1 transition-all"
+        style={{ width: `${page.width * zoom}px` }}
+      >
         <span>Pagina {pageIndex + 1} di {totalPages}</span>
-        <span className="opacity-0 group-hover/page:opacity-100 transition-opacity">Foglio Bianco Word</span>
+        <span className="opacity-0 group-hover/page:opacity-100 transition-opacity text-slate-400">
+          Formato Word A4 • {Math.round(zoom * 100)}%
+        </span>
       </div>
 
-      {/* Sheet Body */}
+      {/* 
+        TRUE WORD ZOOM ARCHITECTURE:
+        Outer container holds layout space for the scaled page (width: page.width * zoom).
+        Inner sheet keeps fixed 820px width so text NEVER reflows, and is scaled via CSS transform!
+      */}
       <div
-        ref={containerRef}
-        className={`relative rounded shadow-[0_20px_50px_rgba(0,0,0,0.6)] select-text transition-all overflow-hidden ${getPaperClass()}`}
         style={{
-          width: page.width * zoom,
-          minHeight: page.height * zoom,
+          width: `${page.width * zoom}px`,
+          height: `${page.height * zoom}px`,
         }}
-        onClick={() => {
-          if (activeTool === 'text' && richEditorRef.current) {
-            richEditorRef.current.focus();
-          }
-        }}
+        className="relative overflow-hidden rounded shadow-[0_20px_50px_rgba(0,0,0,0.65)] bg-transparent transition-size duration-75"
       >
-        {/* PDF Background (if raster/scanned PDF) */}
-        {page.backgroundImageData && (
-          <img
-            src={page.backgroundImageData}
-            alt={`Pagina ${page.pageNumber}`}
-            className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-            draggable={false}
-          />
-        )}
-
-        {/* Real Editable Word Rich Text Surface */}
         <div
-          ref={richEditorRef}
-          contentEditable={activeTool === 'text'}
-          suppressContentEditableWarning
-          onInput={handleContentInput}
-          onBlur={handleContentInput}
+          ref={containerRef}
+          className={`relative select-text transition-transform duration-75 ${getPaperClass()}`}
           style={{
-            minHeight: `${page.height}px`,
-            padding: '64px 60px',
-            outline: 'none',
-            color: paperTemplate.startsWith('dark') ? '#f1f5f9' : '#0f172a',
-            fontSize: '16px',
-            lineHeight: '1.7',
-            fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+            width: `${page.width}px`,
+            height: `${page.height}px`,
+            transform: `scale(${zoom})`,
+            transformOrigin: 'top left',
           }}
-          className="w-full prose max-w-none cursor-text leading-relaxed select-text"
-          dangerouslySetInnerHTML={{ __html: page.contentHtml || '<p><br></p>' }}
-        />
+          onClick={() => {
+            if (activeTool === 'text' && richEditorRef.current) {
+              richEditorRef.current.focus();
+            }
+          }}
+        >
+          {/* PDF Background (if raster/scanned PDF) */}
+          {page.backgroundImageData && (
+            <img
+              src={page.backgroundImageData}
+              alt={`Pagina ${page.pageNumber}`}
+              className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+              draggable={false}
+            />
+          )}
 
-        {/* Freeform Floating Images */}
-        {(page.images || []).map((img) => {
-          const isSelected = selectedImageId === img.id;
-          return (
-            <div
-              key={img.id}
-              style={{
-                position: 'absolute',
-                left: `${img.x}px`,
-                top: `${img.y}px`,
-                width: `${img.width}px`,
-                height: `${img.height}px`,
-                zIndex: 25,
-              }}
-              className={`group/img rounded-lg select-none ${isSelected ? 'ring-2 ring-blue-500 shadow-2xl' : 'hover:ring-1 hover:ring-blue-300'}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedImageId(img.id);
-              }}
-            >
-              <img
-                src={img.src}
-                alt="Immagine inserita"
-                className="w-full h-full object-cover rounded-lg pointer-events-none"
-                draggable={false}
-              />
+          {/* Real Word Rich Text Surface (NO text reflow on zoom) */}
+          <div
+            ref={richEditorRef}
+            contentEditable={activeTool === 'text'}
+            suppressContentEditableWarning
+            onInput={handleContentInput}
+            onBlur={handleContentInput}
+            style={{
+              minHeight: `${page.height}px`,
+              padding: '64px 60px',
+              outline: 'none',
+              color: paperTemplate.startsWith('dark') ? '#f1f5f9' : '#0f172a',
+              fontSize: '16px',
+              lineHeight: '1.7',
+              fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+            }}
+            className="w-full prose max-w-none cursor-text leading-relaxed select-text"
+            dangerouslySetInnerHTML={{ __html: page.contentHtml || '<p><br></p>' }}
+          />
 
+          {/* Freeform Floating Images */}
+          {(page.images || []).map((img) => {
+            const isSelected = selectedImageId === img.id;
+            return (
               <div
-                onPointerDown={(e) => handleStartMoveImage(e, img)}
-                className="absolute -top-3 -left-3 p-1.5 bg-blue-600 text-white rounded-full shadow-lg cursor-move opacity-0 group-hover/img:opacity-100 transition-opacity"
-                title="Trascina per spostare liberamente"
+                key={img.id}
+                style={{
+                  position: 'absolute',
+                  left: `${img.x}px`,
+                  top: `${img.y}px`,
+                  width: `${img.width}px`,
+                  height: `${img.height}px`,
+                  zIndex: 25,
+                }}
+                className={`group/img rounded-lg select-none ${isSelected ? 'ring-2 ring-blue-500 shadow-2xl' : 'hover:ring-1 hover:ring-blue-300'}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setSelectedImageId(img.id);
+                }}
               >
-                <Move className="w-3.5 h-3.5" />
-              </div>
+                <img
+                  src={img.src}
+                  alt="Immagine inserita"
+                  className="w-full h-full object-cover rounded-lg pointer-events-none"
+                  draggable={false}
+                />
 
-              {isSelected && (
-                <div className="absolute -bottom-3 -right-3 flex items-center gap-1 bg-[#181a24] border border-slate-700 px-2 py-0.5 rounded-full shadow-lg text-[10px] text-white">
-                  <button
-                    type="button"
-                    onClick={(e) => handleResizeImage(e, img, -30)}
-                    className="px-1 hover:text-blue-400 font-bold"
-                  >
-                    -
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => handleResizeImage(e, img, 30)}
-                    className="px-1 hover:text-blue-400 font-bold"
-                  >
-                    +
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteImage(img.id)}
-                    className="px-1 text-red-400 hover:text-red-300 ml-1"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
+                <div
+                  onPointerDown={(e) => handleStartMoveImage(e, img)}
+                  className="absolute -top-3 -left-3 p-1.5 bg-blue-600 text-white rounded-full shadow-lg cursor-move opacity-0 group-hover/img:opacity-100 transition-opacity"
+                  title="Trascina per spostare"
+                >
+                  <Move className="w-3.5 h-3.5" />
                 </div>
-              )}
-            </div>
-          );
-        })}
 
-        {/* Apple Pencil Canvas Layer */}
-        <canvas
-          ref={canvasRef}
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-          onPointerDown={handlePointerDown}
-          onPointerMove={handlePointerMove}
-          onPointerUp={handlePointerUp}
-          onPointerCancel={handlePointerUp}
-          style={{
-            width: page.width * zoom,
-            height: page.height * zoom,
-            pointerEvents: activeTool === 'text' ? 'none' : 'auto',
-          }}
-          className="drawing-layer absolute inset-0 cursor-crosshair z-20"
-        />
+                {isSelected && (
+                  <div className="absolute -bottom-3 -right-3 flex items-center gap-1 bg-[#181a24] border border-slate-700 px-2 py-0.5 rounded-full shadow-lg text-[10px] text-white">
+                    <button
+                      type="button"
+                      onClick={(e) => handleResizeImage(e, img, -30)}
+                      className="px-1 hover:text-blue-400 font-bold"
+                    >
+                      -
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(e) => handleResizeImage(e, img, 30)}
+                      className="px-1 hover:text-blue-400 font-bold"
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteImage(img.id)}
+                      className="px-1 text-red-400 hover:text-red-300 ml-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
+          {/* Apple Pencil Canvas Layer */}
+          <canvas
+            ref={canvasRef}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onPointerDown={handlePointerDown}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerUp}
+            onPointerCancel={handlePointerUp}
+            style={{
+              width: `${page.width}px`,
+              height: `${page.height}px`,
+              pointerEvents: activeTool === 'text' ? 'none' : 'auto',
+            }}
+            className="drawing-layer absolute inset-0 cursor-crosshair z-20"
+          />
+        </div>
       </div>
     </div>
   );

@@ -10,8 +10,9 @@ import {
   HardDrive,
   KeyRound,
   ExternalLink,
-  ShieldAlert,
-  Info
+  Info,
+  Copy,
+  Check
 } from 'lucide-react';
 import { syncService, DEFAULT_GOOGLE_CLIENT_ID } from '../services/googleDrive';
 import type { SyncStatus } from '../types';
@@ -37,6 +38,9 @@ export const SyncModal: React.FC<SyncModalProps> = ({
   const [isSavingClientId, setIsSavingClientId] = useState(false);
   const [activeTab, setActiveTab] = useState<'cloud' | 'local'>('cloud');
   const [actionSuccessMsg, setActionSuccessMsg] = useState<string | null>(null);
+  const [copiedOrigin, setCopiedOrigin] = useState(false);
+
+  const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
 
   useEffect(() => {
     if (!isOpen) return;
@@ -51,6 +55,12 @@ export const SyncModal: React.FC<SyncModalProps> = ({
   };
 
   if (!isOpen) return null;
+
+  const handleCopyOrigin = () => {
+    navigator.clipboard.writeText(currentOrigin);
+    setCopiedOrigin(true);
+    setTimeout(() => setCopiedOrigin(false), 2000);
+  };
 
   const handleSaveClientId = async () => {
     setIsSavingClientId(true);
@@ -112,10 +122,8 @@ export const SyncModal: React.FC<SyncModalProps> = ({
     }
   };
 
-  const isAccessingViaRawIp = typeof window !== 'undefined' && /^\d+\.\d+\.\d+\.\d+$/.test(window.location.hostname);
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-150">
       <div className="w-full max-w-xl bg-[#18191e] border border-[#2c2d36] rounded-3xl shadow-2xl overflow-hidden text-slate-100 flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-[#262730] bg-[#141519]">
@@ -124,8 +132,8 @@ export const SyncModal: React.FC<SyncModalProps> = ({
               <Cloud className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-bold text-base tracking-tight text-white">Sincronizzazione & Archiviazione</h3>
-              <p className="text-xs text-slate-400">Salvataggio automatico oltre la memoria locale tra iPad, PC e iPhone</p>
+              <h3 className="font-bold text-base tracking-tight text-white">Google Drive & Cloud Backup</h3>
+              <p className="text-xs text-slate-400">Salvataggio per usare i tuoi appunti ovunque (anche offline e tra dispositivi)</p>
             </div>
           </div>
           <button
@@ -159,7 +167,7 @@ export const SyncModal: React.FC<SyncModalProps> = ({
                 : 'border-transparent text-slate-400 hover:text-slate-200'
             }`}
           >
-            <HardDrive className="w-4 h-4" /> Backup File Locale (.padnotes)
+            <HardDrive className="w-4 h-4" /> File Backup Locale (.padnotes)
           </button>
         </div>
 
@@ -169,26 +177,6 @@ export const SyncModal: React.FC<SyncModalProps> = ({
             <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-400" />
               <span>{actionSuccessMsg}</span>
-            </div>
-          )}
-
-          {/* Raw IP Warning for Google OAuth */}
-          {isAccessingViaRawIp && activeTab === 'cloud' && (
-            <div className="p-3.5 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 text-xs flex items-start gap-2.5">
-              <ShieldAlert className="w-5 h-5 shrink-0 text-amber-400 mt-0.5" />
-              <div className="leading-relaxed">
-                <span className="font-bold block text-amber-300 mb-0.5">Nota importante per l'accesso da iPad:</span>
-                Google per sicurezza rifiuta gli indirizzi IP numerici (come <code>{window.location.hostname}</code>).
-                Per collegare Google Drive con successo, accedi dal link HTTPS Vercel:{' '}
-                <a
-                  href="https://mynotessss-ko3s9cq97-michele-s-projects9.vercel.app"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-semibold underline text-[#0a84ff]"
-                >
-                  mynotessss-ko3s9cq97-michele-s-projects9.vercel.app
-                </a>.
-              </div>
             </div>
           )}
 
@@ -214,7 +202,7 @@ export const SyncModal: React.FC<SyncModalProps> = ({
                     </span>
                     <span className="text-xs text-slate-400">
                       {syncStatus.lastSyncedAt
-                        ? `Ultimo sync: ${new Date(syncStatus.lastSyncedAt).toLocaleString('it-IT')}`
+                        ? `Ultimo salvataggio: ${new Date(syncStatus.lastSyncedAt).toLocaleString('it-IT')}`
                         : 'Nessun salvataggio cloud recente'}
                     </span>
                   </div>
@@ -250,23 +238,33 @@ export const SyncModal: React.FC<SyncModalProps> = ({
                 </button>
               </div>
 
-              {/* Two Essential Setup Checklist Tips */}
+              {/* Current Origin Checker Card */}
               <div className="p-4 rounded-2xl bg-[#1d1f26] border border-[#2c2f3a] flex flex-col gap-2.5 text-xs">
-                <div className="flex items-center gap-2 font-bold text-slate-200">
-                  <Info className="w-4 h-4 text-[#0a84ff]" />
-                  <span>Guida Configurazione Google Cloud (Solo 2 passaggi):</span>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-200 flex items-center gap-1.5">
+                    <Info className="w-4 h-4 text-[#0a84ff]" />
+                    Origine autorizzata richiesta per questo indirizzo:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleCopyOrigin}
+                    className="flex items-center gap-1 text-[11px] px-2.5 py-1 bg-[#252834] hover:bg-[#2e3242] text-[#0a84ff] rounded-lg border border-[#373a4a] transition-colors"
+                  >
+                    {copiedOrigin ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                    <span>{copiedOrigin ? 'Copiato!' : 'Copia'}</span>
+                  </button>
                 </div>
-                <ul className="space-y-1.5 text-slate-300 pl-1 list-disc list-inside leading-relaxed">
-                  <li>
-                    <b>Utenti di Prova (Test Users):</b> Nella schermata di consenso OAuth su Google Cloud, aggiungi la tua email Google personale sotto <i>"Utenti di prova"</i>. Senza questo passaggio Google mostrerà errore 403.
-                  </li>
-                  <li>
-                    <b>Origini JavaScript Autorizzate:</b> Nel tuo ID Client Web, assicurati che ci sia <code>https://mynotessss-ko3s9cq97-michele-s-projects9.vercel.app</code> e <code>http://localhost:5173</code>.
-                  </li>
-                </ul>
+
+                <div className="bg-[#121316] px-3 py-2 rounded-xl border border-[#252730] font-mono text-slate-300 text-[11px] break-all select-all">
+                  {currentOrigin}
+                </div>
+
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  In Google Cloud Console, assicurati che questo URL sia aggiunto sotto <b>"Origini JavaScript autorizzate"</b> del tuo ID Client. In questo modo Google ti permetterà di accedere da qualsiasi rete (università, casa o hotspot).
+                </p>
               </div>
 
-              {/* Client ID Configuration Section */}
+              {/* Client ID Configuration */}
               <div className="pt-2 border-t border-[#262730] flex flex-col gap-2">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-semibold text-slate-300 flex items-center gap-1.5">
@@ -278,7 +276,7 @@ export const SyncModal: React.FC<SyncModalProps> = ({
                     rel="noopener noreferrer"
                     className="text-[11px] text-[#0a84ff] hover:underline flex items-center gap-1"
                   >
-                    Console Google Cloud <ExternalLink className="w-3 h-3" />
+                    Google Cloud Console <ExternalLink className="w-3 h-3" />
                   </a>
                 </div>
                 <div className="flex gap-2">
@@ -286,7 +284,7 @@ export const SyncModal: React.FC<SyncModalProps> = ({
                     type="text"
                     value={clientId}
                     onChange={(e) => setClientId(e.target.value)}
-                    placeholder="es. 123456789-abcdef.apps.googleusercontent.com"
+                    placeholder="138214289325-...apps.googleusercontent.com"
                     className="flex-1 px-3 py-2 bg-[#1d1f26] border border-[#33353e] rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:border-[#007aff]"
                   />
                   <button
@@ -301,27 +299,25 @@ export const SyncModal: React.FC<SyncModalProps> = ({
               </div>
             </div>
           ) : (
+            /* Local Backup Tab */
             <div className="flex flex-col gap-4">
-              <div className="p-4 rounded-2xl bg-[#1d1f26] border border-[#2c2f3a]">
-                <h4 className="text-xs font-semibold text-white mb-1">Trasferimento Diretto tra Dispositivi (100% Offline)</h4>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Puoi esportare in qualsiasi momento un unico file di backup compatto <code className="text-[#0a84ff]">.padnotes</code> contenente tutte le cartelle, documenti Word, tratti a penna e immagini, e importarlo con 1 tocco su iPad, PC o iPhone tramite AirDrop, Telegram, iCloud Drive o chiavetta USB.
-                </p>
+              <div className="p-4 rounded-2xl bg-[#1d1f26] border border-[#2c2f3a] text-xs leading-relaxed text-slate-300">
+                Puoi esportare l'intera libreria dei tuoi appunti in un unico file <code>.padnotes</code> da tenere su chiavetta o inviare via AirDrop/Telegram al tuo iPad o computer.
               </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <button
                   type="button"
                   onClick={handleExportLocal}
-                  className="p-4 rounded-2xl bg-[#007aff] hover:bg-[#0062cc] text-white font-semibold text-xs flex flex-col items-center justify-center gap-2 shadow-lg transition-all"
+                  className="p-4 rounded-2xl bg-[#007aff] hover:bg-[#0062cc] active:scale-95 text-white font-semibold text-xs flex flex-col items-center justify-center gap-2 shadow-lg transition-all"
                 >
                   <Download className="w-6 h-6" />
-                  <span>Scarica File Backup (.padnotes)</span>
+                  <span>Esporta File di Backup</span>
                 </button>
 
-                <label className="p-4 rounded-2xl bg-[#242630] hover:bg-[#2c2e3a] text-slate-200 font-semibold text-xs flex flex-col items-center justify-center gap-2 border border-[#343746] cursor-pointer transition-all">
+                <label className="p-4 rounded-2xl bg-[#242630] hover:bg-[#2c2e3a] active:scale-95 text-slate-200 font-semibold text-xs flex flex-col items-center justify-center gap-2 border border-[#343746] cursor-pointer transition-all">
                   <Upload className="w-6 h-6 text-[#0a84ff]" />
-                  <span>Importa Backup (.padnotes)</span>
+                  <span>Importa File di Backup</span>
                   <input
                     type="file"
                     accept=".padnotes,.json"

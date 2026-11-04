@@ -54,17 +54,67 @@ export class GoogleDriveSyncService {
   }
 
   /**
+   * Ensures Google Identity Services client library is dynamically loaded
+   */
+  private async ensureGoogleScriptLoaded(): Promise<void> {
+    if (typeof window !== 'undefined' && window.google?.accounts?.oauth2) {
+      return;
+    }
+
+    return new Promise((resolve, reject) => {
+      const existing = document.querySelector('script[src*="accounts.google.com/gsi/client"]');
+      if (existing) {
+        let attempts = 0;
+        const interval = setInterval(() => {
+          attempts++;
+          if (window.google?.accounts?.oauth2) {
+            clearInterval(interval);
+            resolve();
+          } else if (attempts > 30) {
+            clearInterval(interval);
+            reject(new Error("Timeout caricamento Google Identity Services. Ricarica la pagina."));
+          }
+        }, 100);
+      } else {
+        const script = document.createElement('script');
+        script.src = 'https://accounts.google.com/gsi/client';
+        script.async = true;
+        script.defer = true;
+        script.onload = () => {
+          let attempts = 0;
+          const interval = setInterval(() => {
+            attempts++;
+            if (window.google?.accounts?.oauth2) {
+              clearInterval(interval);
+              resolve();
+            } else if (attempts > 20) {
+              clearInterval(interval);
+              resolve();
+            }
+          }, 100);
+        };
+        script.onerror = () => reject(new Error("Impossibile caricare il servizio Google Identity. Verifica la connessione internet."));
+        document.head.appendChild(script);
+      }
+    });
+  }
+
+  /**
    * Initializes OAuth Token Client with Google Identity Services (GIS)
    */
   async requestAuthToken(): Promise<string> {
+    await this.ensureGoogleScriptLoaded();
+
     const clientId = await this.getClientId();
     if (!clientId) {
       throw new Error("Client ID di Google non configurato. Inserisci il tuo Google Client ID nelle impostazioni Cloud.");
     }
 
     if (!window.google?.accounts?.oauth2) {
-      throw new Error("Libreria Google Identity Services non ancora caricata. Verifica la connessione internet.");
+      throw new Error("Libreria Google Identity Services non ancora disponibile. Riprova tra pochi istanti.");
     }
+
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
 
     return new Promise((resolve, reject) => {
       try {
@@ -75,16 +125,17 @@ export class GoogleDriveSyncService {
             if (response.error !== undefined) {
               let errorMsg = `Errore autenticazione Google (${response.error})`;
               if (response.error === 'popup_closed_by_user') {
-                errorMsg = 'Accesso annullato (la finestra di Google è stata chiusa). Riprova.';
+                errorMsg = 'Accesso annullato (la finestra di accesso Google è stata chiusa). Riprova.';
               } else if (response.error === 'access_denied') {
-                errorMsg = 'Accesso negato: assicurati di aver aggiunto la tua email Google tra gli "Utenti di prova" (Test users) nella schermata di consenso OAuth su Google Cloud Console.';
+                errorMsg = 'Accesso negato: assicurati di aver aggiunto la tua email Google tra gli "Utenti di prova" (Test users) nella schermata di consenso OAuth di Google Cloud Console.';
               } else if (response.error === 'idpiframe_initialization_failed' || response.error_subtype === 'origin_mismatch') {
-                errorMsg = 'Origine non autorizzata: aggiungi il dominio https://mynotessss-ko3s9cq97-michele-s-projects9.vercel.app nelle "Origini JavaScript autorizzate" su Google Cloud Console.';
+                errorMsg = `Origine non autorizzata: aggiungi il dominio "${currentOrigin}" nelle "Origini JavaScript autorizzate" dell'ID Client su Google Cloud Console.`;
               }
               await this.saveSyncMetadata({ isSyncing: false, error: errorMsg });
               reject(new Error(errorMsg));
               return;
             }
+
             this.accessToken = response.access_token;
 
             // Fetch user email
@@ -111,8 +162,8 @@ export class GoogleDriveSyncService {
           },
         });
 
-        // Request token; prompt user if needed
-        this.tokenClient.requestAccessToken({ prompt: '' });
+        // Prompt user to select account if not already connected
+        this.tokenClient.requestAccessToken({ prompt: this.accessToken ? '' : 'select_account' });
       } catch (err: any) {
         reject(err);
       }
@@ -144,12 +195,24 @@ export class GoogleDriveSyncService {
       const fileName = 'PadNotes_Workspace_Cloud.json';
 
       // 1. Check if file already exists in Drive
-      const listRes = await fetch(
+      let listRes = await fetch(
         `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and trashed=false&fields=files(id, name)`,
         {
           headers: { Authorization: `Bearer ${this.accessToken}` }
         }
       );
+
+      // Handle 401 token expiry automatically
+      if (listRes.status === 401) {
+        this.accessToken = null;
+        await this.requestAuthToken();
+        listRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and trashed=false&fields=files(id, name)`,
+          {
+            headers: { Authorization: `Bearer ${this.accessToken}` }
+          }
+        );
+      }
 
       if (!listRes.ok) {
         throw new Error(`Errore consultazione Google Drive: ${listRes.statusText}`);
@@ -212,14 +275,14 @@ export class GoogleDriveSyncService {
     } catch (err: any) {
       await this.saveSyncMetadata({
         isSyncing: false,
-        error: err.message || 'Errore durante la sincronizzazione'
+        error: err.message || 'Errore durante la sincronizzazione con Google Drive'
       });
       throw err;
     }
   }
 
   /**
-   * Pull backup data from Google Drive and merge/restore into local IndexedDB
+   * Pull backup data from Google Drive and restore into local IndexedDB
    */
   async restoreFromGoogleDrive(): Promise<WorkspaceBackup> {
     await this.saveSyncMetadata({ isSyncing: true, error: null });
@@ -230,12 +293,23 @@ export class GoogleDriveSyncService {
       }
 
       const fileName = 'PadNotes_Workspace_Cloud.json';
-      const listRes = await fetch(
+      let listRes = await fetch(
         `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and trashed=false&fields=files(id, name, modifiedTime)`,
         {
           headers: { Authorization: `Bearer ${this.accessToken}` }
         }
       );
+
+      if (listRes.status === 401) {
+        this.accessToken = null;
+        await this.requestAuthToken();
+        listRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and trashed=false&fields=files(id, name, modifiedTime)`,
+          {
+            headers: { Authorization: `Bearer ${this.accessToken}` }
+          }
+        );
+      }
 
       if (!listRes.ok) {
         throw new Error(`Errore richiesta elenco file su Google Drive`);
@@ -243,7 +317,7 @@ export class GoogleDriveSyncService {
 
       const listData = await listRes.json();
       if (!listData.files || listData.files.length === 0) {
-        throw new Error("Nessun backup di PadNotes trovato su questo account Google Drive.");
+        throw new Error("Nessun backup di PadNotes trovato su questo account Google Drive. Esegui prima un salvataggio.");
       }
 
       const fileId = listData.files[0].id;
