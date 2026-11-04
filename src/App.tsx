@@ -547,6 +547,7 @@ export function App() {
               strokeSize={strokeSize}
               applePencilOnly={applePencilOnly}
               zoom={zoom}
+              onChangeZoom={setZoom}
               onUpdatePage={(pageIdx, updates) => {
                 const updatedPages = activeNotebook.pages.map((p, idx) =>
                   idx === pageIdx ? { ...p, ...updates } : p

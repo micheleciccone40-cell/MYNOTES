@@ -19,6 +19,7 @@ interface DocumentEditorProps {
   canUndo?: boolean;
   canRedo?: boolean;
   zoom?: number;
+  onChangeZoom?: (zoom: number) => void;
 }
 
 export const DocumentEditor: React.FC<DocumentEditorProps> = ({
@@ -37,16 +38,114 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
   canUndo = false,
   canRedo = false,
   zoom = 1,
+  onChangeZoom,
 }) => {
   const [gestureToast, setGestureToast] = useState<string | null>(null);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const initialPinchDistRef = useRef<number | null>(null);
+  const initialPinchZoomRef = useRef<number>(zoom);
+  const isPinchingRef = useRef<boolean>(false);
 
   const showToast = (text: string) => {
     setGestureToast(text);
-    setTimeout(() => setGestureToast(null), 1200);
+    setTimeout(() => setGestureToast(null), 1000);
+  };
+
+  // Pinch-to-zoom & Trackpad gesture listeners
+  useEffect(() => {
+    const el = wrapperRef.current;
+    if (!el) return;
+
+    const handleGestureStart = (e: any) => {
+      e.preventDefault();
+      initialPinchZoomRef.current = zoom;
+      isPinchingRef.current = true;
+    };
+
+    const handleGestureChange = (e: any) => {
+      e.preventDefault();
+      if (!onChangeZoom) return;
+      const targetZoom = Number(Math.min(2.5, Math.max(0.5, initialPinchZoomRef.current * e.scale)).toFixed(2));
+      onChangeZoom(targetZoom);
+      showToast(`🔍 ${Math.round(targetZoom * 100)}%`);
+    };
+
+    const handleGestureEnd = (e: any) => {
+      e.preventDefault();
+      setTimeout(() => {
+        isPinchingRef.current = false;
+      }, 150);
+    };
+
+    // Trackpad Pinch / Ctrl+Wheel zoom
+    const handleWheel = (e: WheelEvent) => {
+      if (e.ctrlKey && onChangeZoom) {
+        e.preventDefault();
+        const delta = -e.deltaY * 0.005;
+        const targetZoom = Number(Math.min(2.5, Math.max(0.5, zoom + delta)).toFixed(2));
+        onChangeZoom(targetZoom);
+        showToast(`🔍 ${Math.round(targetZoom * 100)}%`);
+      }
+    };
+
+    el.addEventListener('gesturestart', handleGestureStart as any, { passive: false });
+    el.addEventListener('gesturechange', handleGestureChange as any, { passive: false });
+    el.addEventListener('gestureend', handleGestureEnd as any, { passive: false });
+    el.addEventListener('wheel', handleWheel, { passive: false });
+
+    return () => {
+      el.removeEventListener('gesturestart', handleGestureStart as any);
+      el.removeEventListener('gesturechange', handleGestureChange as any);
+      el.removeEventListener('gestureend', handleGestureEnd as any);
+      el.removeEventListener('wheel', handleWheel);
+    };
+  }, [zoom, onChangeZoom]);
+
+  // Wrapper-level 2-finger touch listeners (works on margins and background)
+  const handleWrapperTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      initialPinchDistRef.current = dist;
+      initialPinchZoomRef.current = zoom;
+      isPinchingRef.current = false;
+    }
+  };
+
+  const handleWrapperTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && initialPinchDistRef.current && onChangeZoom) {
+      const currentDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const diff = Math.abs(currentDist - initialPinchDistRef.current);
+      if (diff > 8) {
+        isPinchingRef.current = true;
+        const scale = currentDist / initialPinchDistRef.current;
+        const targetZoom = Number(Math.min(2.5, Math.max(0.5, initialPinchZoomRef.current * scale)).toFixed(2));
+        onChangeZoom(targetZoom);
+        showToast(`🔍 ${Math.round(targetZoom * 100)}%`);
+      }
+    }
+  };
+
+  const handleWrapperTouchEnd = () => {
+    initialPinchDistRef.current = null;
+    setTimeout(() => {
+      isPinchingRef.current = false;
+    }, 150);
   };
 
   return (
-    <div className="w-full flex flex-col items-center gap-10 py-6 select-text">
+    <div
+      ref={wrapperRef}
+      onTouchStart={handleWrapperTouchStart}
+      onTouchMove={handleWrapperTouchMove}
+      onTouchEnd={handleWrapperTouchEnd}
+      className="w-full flex flex-col items-center gap-10 py-6 select-text touch-pan-x touch-pan-y"
+    >
       {/* 2-Finger Gesture HUD Toast */}
       {gestureToast && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-black/85 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-semibold shadow-2xl border border-white/20 flex items-center gap-2">
@@ -113,6 +212,7 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
           onRedo={onRedo}
           showToast={showToast}
           zoom={zoom}
+          onChangeZoom={onChangeZoom}
         />
       ))}
 
@@ -148,6 +248,7 @@ interface SingleDocumentPageProps {
   onRedo?: () => void;
   showToast: (msg: string) => void;
   zoom?: number;
+  onChangeZoom?: (zoom: number) => void;
 }
 
 const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
@@ -166,6 +267,7 @@ const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
   onRedo,
   showToast,
   zoom = 1,
+  onChangeZoom,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -221,27 +323,66 @@ const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
     redrawCanvas();
   }, [page.width, page.height, redrawCanvas]);
 
-  // Touch gesture listeners (2-finger tap undo)
+  // Touch gesture listeners: Pinch-to-zoom + 2-finger Undo
+  const pagePinchDistRef = useRef<number | null>(null);
+  const pagePinchZoomRef = useRef<number>(zoom);
+  const isPagePinchingRef = useRef<boolean>(false);
+
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
     touchStartCountRef.current = e.touches.length;
-    if (e.touches.length === 2 || e.touches.length === 3) {
-      touchStartTimeRef.current = Date.now();
+    touchStartTimeRef.current = Date.now();
+    isPagePinchingRef.current = false;
+
+    if (e.touches.length === 2) {
+      const dist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      pagePinchDistRef.current = dist;
+      pagePinchZoomRef.current = zoom;
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
+    if (e.touches.length === 2 && pagePinchDistRef.current && onChangeZoom) {
+      const currentDist = Math.hypot(
+        e.touches[0].clientX - e.touches[1].clientX,
+        e.touches[0].clientY - e.touches[1].clientY
+      );
+      const diff = Math.abs(currentDist - pagePinchDistRef.current);
+      if (diff > 8) {
+        isPagePinchingRef.current = true;
+        const scale = currentDist / pagePinchDistRef.current;
+        const targetZoom = Number(Math.min(2.5, Math.max(0.5, pagePinchZoomRef.current * scale)).toFixed(2));
+        onChangeZoom(targetZoom);
+        showToast(`🔍 ${Math.round(targetZoom * 100)}%`);
+      }
     }
   };
 
   const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
     const duration = Date.now() - touchStartTimeRef.current;
 
-    if (touchStartCountRef.current === 2 && duration < 380 && e.touches.length === 0) {
-      if (onUndo) {
-        onUndo();
-        showToast('↩ Annulla (2 dita)');
+    // Only trigger undo/redo if the user was NOT pinching to zoom!
+    if (!isPagePinchingRef.current) {
+      if (touchStartCountRef.current === 2 && duration < 380 && e.touches.length === 0) {
+        if (onUndo) {
+          onUndo();
+          showToast('↩ Annulla (2 dita)');
+        }
+      } else if (touchStartCountRef.current === 3 && duration < 380 && e.touches.length === 0) {
+        if (onRedo) {
+          onRedo();
+          showToast('↪ Ripristina (3 dita)');
+        }
       }
-    } else if (touchStartCountRef.current === 3 && duration < 380 && e.touches.length === 0) {
-      if (onRedo) {
-        onRedo();
-        showToast('↪ Ripristina (3 dita)');
-      }
+    }
+
+    if (e.touches.length < 2) {
+      pagePinchDistRef.current = null;
+      setTimeout(() => {
+        isPagePinchingRef.current = false;
+      }, 150);
     }
     touchStartCountRef.current = 0;
   };
@@ -505,6 +646,7 @@ const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
         <canvas
           ref={canvasRef}
           onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
