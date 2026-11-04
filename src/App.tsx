@@ -51,6 +51,42 @@ export function App() {
     lastSyncedAt: null
   });
 
+  // Network State & Offline/Online handling
+  const [, setIsOnline] = useState<boolean>(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [networkToast, setNetworkToast] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleOnline = async () => {
+      setIsOnline(true);
+      setNetworkToast('🟢 Connesso a Internet • Sincronizzazione automatica con Google Drive...');
+      setTimeout(() => setNetworkToast(null), 3500);
+
+      const meta = await syncService.getSyncMetadata();
+      if (meta.isConnected) {
+        try {
+          await syncService.syncToGoogleDrive();
+          const updated = await syncService.getSyncMetadata();
+          setSyncStatus(updated);
+        } catch (e) {
+          console.warn('Auto-sync on reconnect error:', e);
+        }
+      }
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      setNetworkToast('🟠 Modalità Offline • Gli appunti continuano a salvarsi al sicuro sul tuo iPad');
+      setTimeout(() => setNetworkToast(null), 4000);
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
   // Load database data
   const refreshData = useCallback(async () => {
     await seedInitialDataIfNeeded();
@@ -425,6 +461,12 @@ export function App() {
 
   return (
     <div className="h-full w-full flex flex-col bg-[#0c0d10] text-slate-100 overflow-hidden font-sans select-none">
+      {/* Network Offline / Auto-sync Toast */}
+      {networkToast && (
+        <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-[#181a24]/95 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-semibold shadow-2xl border border-white/20 flex items-center gap-2">
+          <span>{networkToast}</span>
+        </div>
+      )}
       {activeNotebook && currentPage ? (
         /* VIEW 1: WORD-STYLE DOCUMENT EDITOR WITH APPLE PENCIL */
         <div className="flex-1 flex flex-col h-full overflow-hidden">
