@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, BookPlus, Grid3X3, List, Sparkles } from 'lucide-react';
+import { X, FileText, Grid3X3, List, Sparkles } from 'lucide-react';
 import type { PaperTemplate, Folder } from '../types';
 
 interface NewNotebookModalProps {
@@ -10,24 +10,13 @@ interface NewNotebookModalProps {
   onCreate: (title: string, template: PaperTemplate, coverColor: string, folderId: string | null) => void;
 }
 
-const COVER_COLORS = [
-  '#4f46e5', // Indigo
-  '#2563eb', // Blue
-  '#059669', // Emerald
-  '#7c3aed', // Purple
-  '#d97706', // Amber
-  '#e11d48', // Rose
-  '#0891b2', // Cyan
-  '#334155', // Obsidian slate
-];
-
-const TEMPLATES: { id: PaperTemplate; name: string; icon: any }[] = [
-  { id: 'blank', name: 'Bianco (Word)', icon: Sparkles },
-  { id: 'ruled', name: 'A Righe', icon: List },
-  { id: 'grid', name: 'A Quadretti', icon: Grid3X3 },
-  { id: 'dots', name: 'A Puntini', icon: Sparkles },
-  { id: 'dark-ruled', name: 'Dark Righe', icon: List },
-  { id: 'dark-grid', name: 'Dark Quadretti', icon: Grid3X3 },
+const TEMPLATES: { id: PaperTemplate; name: string; desc: string; icon: any }[] = [
+  { id: 'blank', name: 'Bianco (Word)', desc: 'Foglio bianco nativo Word', icon: FileText },
+  { id: 'ruled', name: 'A Righe', desc: 'Righe universitarie', icon: List },
+  { id: 'grid', name: 'A Quadretti', desc: 'Quadretti 5mm per grafici', icon: Grid3X3 },
+  { id: 'dots', name: 'A Puntini', desc: 'Bullet journal', icon: Sparkles },
+  { id: 'dark-ruled', name: 'Dark Righe', desc: 'Sfondo scuro riposante', icon: List },
+  { id: 'dark-grid', name: 'Dark Quadretti', desc: 'Matematica & Ingegneria', icon: Grid3X3 },
 ];
 
 export const NewNotebookModal: React.FC<NewNotebookModalProps> = ({
@@ -38,8 +27,7 @@ export const NewNotebookModal: React.FC<NewNotebookModalProps> = ({
   onCreate
 }) => {
   const [title, setTitle] = useState('');
-  const [template, setTemplate] = useState<PaperTemplate>('blank');
-  const [coverColor, setCoverColor] = useState(COVER_COLORS[0]);
+  const [template, setTemplate] = useState<PaperTemplate>('blank'); // BLANK WORD DEFAULT
   const defaultFolder = ['all', 'favorites', 'recent'].includes(currentFolderId) ? null : (currentFolderId as string);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(defaultFolder);
 
@@ -48,26 +36,29 @@ export const NewNotebookModal: React.FC<NewNotebookModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
-    onCreate(title.trim(), template, coverColor, selectedFolderId);
+    onCreate(title.trim(), template, '#1e293b', selectedFolderId);
     setTitle('');
     onClose();
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl overflow-hidden text-slate-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+      <div className="w-full max-w-md bg-[#18191e] border border-[#2c2d36] rounded-3xl shadow-2xl overflow-hidden text-slate-100 flex flex-col">
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-900/60">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center">
-              <BookPlus className="w-5 h-5" />
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#262730] bg-[#141519]">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-2xl bg-[#007aff]/15 text-[#0a84ff] flex items-center justify-center">
+              <FileText className="w-5 h-5" />
             </div>
-            <h3 className="font-semibold text-base">Nuovo Taccuino</h3>
+            <div>
+              <h3 className="font-bold text-base tracking-tight text-white">Nuovo Documento</h3>
+              <p className="text-xs text-slate-400">Crea un documento con impaginazione Word</p>
+            </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -77,15 +68,15 @@ export const NewNotebookModal: React.FC<NewNotebookModalProps> = ({
         <form onSubmit={handleSubmit} className="p-6 flex flex-col gap-4 text-xs">
           <div>
             <label className="block font-semibold text-slate-400 uppercase tracking-wider mb-1.5">
-              Titolo del Taccuino
+              Titolo del Documento
             </label>
             <input
               type="text"
               autoFocus
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="es. Appunti Diritto Privato, Idee Progetto..."
-              className="w-full px-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-slate-100 placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+              placeholder="es. Appunti Diritto Privato, Sintesi Esame..."
+              className="w-full px-4 py-2.5 bg-[#1d1f26] border border-[#33353e] rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-[#007aff] text-sm"
             />
           </div>
 
@@ -93,7 +84,7 @@ export const NewNotebookModal: React.FC<NewNotebookModalProps> = ({
             <label className="block font-semibold text-slate-400 uppercase tracking-wider mb-2">
               Tipo di Foglio
             </label>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {TEMPLATES.map((tmpl) => {
                 const Icon = tmpl.icon;
                 const isSelected = template === tmpl.id;
@@ -102,36 +93,22 @@ export const NewNotebookModal: React.FC<NewNotebookModalProps> = ({
                     key={tmpl.id}
                     type="button"
                     onClick={() => setTemplate(tmpl.id)}
-                    className={`p-2.5 rounded-xl border flex flex-col items-center gap-1.5 transition-all ${
+                    className={`p-3 rounded-2xl border flex items-center gap-3 text-left transition-all ${
                       isSelected
-                        ? 'border-indigo-500 bg-indigo-500/15 text-indigo-300 font-semibold shadow-sm'
-                        : 'border-slate-800 bg-slate-800/40 text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                        ? 'border-[#007aff] bg-[#007aff]/15 text-white font-semibold shadow-sm'
+                        : 'border-[#2d2f39] bg-[#1d1f26] text-slate-400 hover:bg-[#22242d] hover:text-slate-200'
                     }`}
                   >
-                    <Icon className="w-4 h-4" />
-                    <span>{tmpl.name}</span>
+                    <div className={`p-2 rounded-xl ${isSelected ? 'bg-[#007aff] text-white' : 'bg-[#292c36] text-slate-400'}`}>
+                      <Icon className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <span className="font-semibold block text-xs">{tmpl.name}</span>
+                      <span className="text-[10px] text-slate-500 leading-tight block">{tmpl.desc}</span>
+                    </div>
                   </button>
                 );
               })}
-            </div>
-          </div>
-
-          <div>
-            <label className="block font-semibold text-slate-400 uppercase tracking-wider mb-2">
-              Colore Copertina
-            </label>
-            <div className="flex items-center gap-2.5">
-              {COVER_COLORS.map((col) => (
-                <button
-                  key={col}
-                  type="button"
-                  onClick={() => setCoverColor(col)}
-                  className={`w-7 h-7 rounded-full transition-transform hover:scale-110 ${
-                    coverColor === col ? 'ring-2 ring-white ring-offset-2 ring-offset-slate-900 scale-105' : ''
-                  }`}
-                  style={{ backgroundColor: col }}
-                />
-              ))}
             </div>
           </div>
 
@@ -143,7 +120,7 @@ export const NewNotebookModal: React.FC<NewNotebookModalProps> = ({
               <select
                 value={selectedFolderId || ''}
                 onChange={(e) => setSelectedFolderId(e.target.value ? e.target.value : null)}
-                className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                className="w-full px-3 py-2 bg-[#1d1f26] border border-[#33353e] rounded-xl text-slate-200 focus:outline-none focus:border-[#007aff]"
               >
                 <option value="">Nessuna cartella (Principale)</option>
                 {folders.map((f) => (
@@ -155,20 +132,20 @@ export const NewNotebookModal: React.FC<NewNotebookModalProps> = ({
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-800 mt-2">
+          <div className="flex items-center justify-end gap-2 pt-4 border-t border-[#262730] mt-2">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-slate-400 hover:text-slate-200 rounded-xl hover:bg-slate-800 transition-colors"
+              className="px-4 py-2 text-slate-400 hover:text-slate-200 rounded-xl hover:bg-white/5 transition-colors"
             >
               Annulla
             </button>
             <button
               type="submit"
               disabled={!title.trim()}
-              className="px-5 py-2 font-semibold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl shadow-lg transition-all"
+              className="px-5 py-2 font-semibold text-white bg-[#007aff] hover:bg-[#0062cc] disabled:opacity-40 disabled:cursor-not-allowed rounded-xl shadow-lg transition-all"
             >
-              Crea Taccuino
+              Crea Documento
             </button>
           </div>
         </form>

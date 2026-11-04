@@ -31,7 +31,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
       onClose();
     } catch (err: any) {
       console.error('Import error:', err);
-      setErrorMessage(err.message || 'Errore durante l\'importazione del file.');
+      setErrorMessage(err.message || "Errore durante l'importazione del file.");
     } finally {
       setIsProcessing(false);
     }
@@ -52,12 +52,12 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4">
-      <div className="w-full max-w-lg bg-[#16181f] border border-slate-800 rounded-3xl shadow-2xl overflow-hidden text-slate-100 flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800/80 bg-[#121318]">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-blue-600/20 text-blue-400 flex items-center justify-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+      <div className="w-full max-w-lg bg-[#18191e] border border-[#2c2d36] rounded-3xl shadow-2xl overflow-hidden text-slate-100 flex flex-col">
+        {/* Apple / Goodnotes Style Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-[#262730] bg-[#141519]">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-2xl bg-[#007aff]/15 text-[#0a84ff] flex items-center justify-center">
               <UploadCloud className="w-5 h-5" />
             </div>
             <div>
@@ -68,7 +68,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors"
           >
             <X className="w-5 h-5" />
           </button>
@@ -84,8 +84,8 @@ export const ImportModal: React.FC<ImportModalProps> = ({
             onClick={() => fileInputRef.current?.click()}
             className={`border-2 border-dashed rounded-2xl p-7 flex flex-col items-center justify-center text-center cursor-pointer transition-all ${
               isDragging
-                ? 'border-blue-500 bg-blue-500/10'
-                : 'border-slate-700 bg-slate-900/60 hover:bg-slate-800/60 hover:border-blue-500/60'
+                ? 'border-[#007aff] bg-[#007aff]/10'
+                : 'border-[#33353e] bg-[#1d1f26] hover:bg-[#22242d] hover:border-[#007aff]/60'
             }`}
           >
             <input
@@ -98,25 +98,25 @@ export const ImportModal: React.FC<ImportModalProps> = ({
 
             {isProcessing ? (
               <div className="flex flex-col items-center gap-3 py-2">
-                <Loader2 className="w-9 h-9 text-blue-500 animate-spin" />
+                <Loader2 className="w-9 h-9 text-[#007aff] animate-spin" />
                 <span className="text-sm font-semibold text-slate-200">
-                  Caricamento e conversione pagine...
+                  Conversione in testo modificabile...
                 </span>
                 <span className="text-xs text-slate-400">
-                  Rendering vettoriale per Apple Pencil
+                  Estrazione testo Word e ottimizzazione Apple Pencil
                 </span>
               </div>
             ) : (
               <div className="flex flex-col items-center gap-3">
-                <div className="w-14 h-14 rounded-2xl bg-blue-600/20 text-blue-400 flex items-center justify-center shadow-inner">
+                <div className="w-14 h-14 rounded-2xl bg-[#007aff]/15 text-[#0a84ff] flex items-center justify-center shadow-inner">
                   <UploadCloud className="w-7 h-7" />
                 </div>
                 <div>
-                  <span className="text-sm font-semibold text-slate-200 block">
-                    Tocca per selezionare il file o trascinalo qui
+                  <span className="text-sm font-semibold text-white block">
+                    Tocca per selezionare dal tuo iPad o trascina qui
                   </span>
                   <span className="text-xs text-slate-400 mt-1 block">
-                    Verrà creato un taccuino con tutte le pagine su cui scrivere ed evidenziare
+                    I documenti vengono convertiti in pagine Word modificabili su cui scrivere liberamente
                   </span>
                 </div>
               </div>
@@ -125,27 +125,27 @@ export const ImportModal: React.FC<ImportModalProps> = ({
 
           {/* Formats Supported Badges */}
           <div className="grid grid-cols-3 gap-2.5">
-            <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col gap-1">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-red-400">
+            <div className="p-3 rounded-2xl bg-[#1d1f26] border border-[#2a2c36] flex flex-col gap-1">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-rose-400">
                 <FileText className="w-4 h-4" /> PDF
               </div>
               <p className="text-[11px] text-slate-400 leading-tight">
-                Pagine nitide pronte per Apple Pencil.
+                Conversione in testo Word editabile e fogli per Apple Pencil.
               </p>
             </div>
 
-            <div className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 flex flex-col gap-1">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-400">
+            <div className="p-3 rounded-2xl bg-[#1d1f26] border border-[#2a2c36] flex flex-col gap-1">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-[#0a84ff]">
                 <File className="w-4 h-4" /> Word (.docx)
               </div>
               <p className="text-[11px] text-slate-400 leading-tight">
-                Testo impaginato con margini per appunti.
+                Impaginazione testo Word nativa con margini.
               </p>
             </div>
 
             <div
               onClick={() => setIsPagesGuideOpen(!isPagesGuideOpen)}
-              className="p-3 rounded-2xl bg-slate-900/80 border border-slate-800 hover:border-amber-500/50 cursor-pointer flex flex-col gap-1 transition-colors"
+              className="p-3 rounded-2xl bg-[#1d1f26] border border-[#2a2c36] hover:border-amber-500/50 cursor-pointer flex flex-col gap-1 transition-colors"
             >
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-400">
@@ -154,7 +154,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 <HelpCircle className="w-3.5 h-3.5 text-amber-400/80" />
               </div>
               <p className="text-[11px] text-slate-400 leading-tight">
-                Anteprima nativa Apple o esporta in PDF.
+                Anteprima nativa Apple o tocca per la guida rapida.
               </p>
             </div>
           </div>

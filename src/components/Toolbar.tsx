@@ -28,7 +28,7 @@ import type { ToolType, PaperTemplate } from '../types';
 
 interface ToolbarProps {
   title: string;
-  currentPageIndex: number;
+  currentPageIndex?: number;
   totalPages: number;
   paperTemplate: PaperTemplate;
   activeTool: ToolType;
@@ -45,8 +45,8 @@ interface ToolbarProps {
   onToggleApplePencilOnly: () => void;
   onUndo: () => void;
   onRedo: () => void;
-  onPrevPage: () => void;
-  onNextPage: () => void;
+  onPrevPage?: () => void;
+  onNextPage?: () => void;
   onAddPage: () => void;
   onChangePaperTemplate: (template: PaperTemplate) => void;
   onInsertImage: (file: File) => void;
@@ -72,7 +72,6 @@ const FORMAL_TEXT_COLORS = [
 
 export const Toolbar: React.FC<ToolbarProps> = ({
   title,
-  currentPageIndex,
   totalPages,
   paperTemplate,
   activeTool,
@@ -89,8 +88,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onToggleApplePencilOnly,
   onUndo,
   onRedo,
-  onPrevPage,
-  onNextPage,
   onAddPage,
   onChangePaperTemplate,
   onInsertImage,
@@ -243,34 +240,19 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             )}
           </div>
 
-          {/* Page Counter & Add Page */}
-          <div className="flex items-center bg-[#20222a] rounded-lg px-2 py-1 gap-1.5 text-xs text-slate-300">
-            <button
-              type="button"
-              onClick={onPrevPage}
-              disabled={currentPageIndex <= 0}
-              className="hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              ◀
-            </button>
-            <span className="font-mono text-xs font-semibold">
-              {currentPageIndex + 1}/{totalPages}
+          {/* Total Pages Count & Add Page (Continuous Scroll indicator) */}
+          <div className="flex items-center bg-[#20222a] rounded-lg px-2.5 py-1 gap-2 text-xs text-slate-300 border border-[#2d303e]">
+            <span className="text-[11px] font-medium text-slate-400">
+              {totalPages} {totalPages === 1 ? 'pagina' : 'pagine'}
             </span>
             <button
               type="button"
-              onClick={onNextPage}
-              disabled={currentPageIndex >= totalPages - 1}
-              className="hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
-            >
-              ▶
-            </button>
-            <button
-              type="button"
               onClick={onAddPage}
-              className="p-1 text-blue-400 hover:text-blue-300 font-semibold"
-              title="Aggiungi pagina"
+              className="flex items-center gap-1 text-blue-400 hover:text-blue-300 font-semibold text-xs"
+              title="Aggiungi pagina in fondo"
             >
               <Plus className="w-3.5 h-3.5" />
+              <span>Pagina</span>
             </button>
           </div>
 

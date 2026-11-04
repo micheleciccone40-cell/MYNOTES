@@ -174,13 +174,29 @@ export async function importPdf(file: File | Blob, originalFileName: string): Pr
     // 1. Extract REAL editable HTML text from the PDF!
     const editableHtml = await convertPdfPageToEditableHtml(page);
 
+    // 2. If PDF has no extractable digital text (e.g. scanned notes or image slides), render canvas fallback
+    let backgroundImageData: string | undefined = undefined;
+    const plainText = (editableHtml || '').replace(/<[^>]*>?/gm, '').trim();
+    if (plainText.length < 8) {
+      const viewport = page.getViewport({ scale: 1.5 });
+      const canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        backgroundImageData = canvas.toDataURL('image/jpeg', 0.85);
+      }
+    }
+
     pages.push({
       id: `pdf-page-${Date.now()}-${i}`,
       pageNumber: i,
       backgroundType: 'word', // Convert to editable Word format!
       width: 820,
       height: 1160,
-      contentHtml: editableHtml,
+      contentHtml: editableHtml || '<p><br></p>',
+      backgroundImageData,
       images: [],
       strokes: []
     });
