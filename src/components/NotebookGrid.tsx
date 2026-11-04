@@ -10,7 +10,6 @@ import {
   Copy,
   FolderInput,
   Menu,
-  Bell,
   Cloud,
   ChevronDown,
   ListFilter,
@@ -18,14 +17,16 @@ import {
   List as ListIcon,
   FolderPlus,
   FileText,
-  X
+  X,
+  RotateCcw,
+  Smartphone
 } from 'lucide-react';
 import type { Notebook, Folder } from '../types';
 
 interface NotebookGridProps {
   notebooks: Notebook[];
   folders: Folder[];
-  currentFolderId: string | 'all' | 'favorites' | 'shared';
+  currentFolderId: string | 'all' | 'favorites' | 'shared' | 'trash';
   currentFolderName: string;
   onOpenNotebook: (notebookId: string) => void;
   onCreateNotebook: () => void;
@@ -39,6 +40,8 @@ interface NotebookGridProps {
   onExportPdfDirect: (notebook: Notebook) => void;
   onSelectFolder: (folderId: string | 'all') => void;
   onOpenMobileSidebar: () => void;
+  onRestoreNotebook?: (notebookId: string) => void;
+  onEmptyTrash?: () => void;
 }
 
 export const NotebookGrid: React.FC<NotebookGridProps> = ({
@@ -57,12 +60,16 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
   onMoveNotebook,
   onExportPdfDirect,
   onSelectFolder,
-  onOpenMobileSidebar
+  onOpenMobileSidebar,
+  onRestoreNotebook,
+  onEmptyTrash
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showNewMenu, setShowNewMenu] = useState(false);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [sortBy, setSortBy] = useState<'date' | 'name' | 'pages'>('date');
+  const [showSortMenu, setShowSortMenu] = useState(false);
+  const [dismissPwaTip, setDismissPwaTip] = useState(false);
 
   // Context Menu state (for long-press on iPad or right-click on PC)
   const [contextMenu, setContextMenu] = useState<{
@@ -83,7 +90,6 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
     const clientY = touch.clientY;
 
     longPressTimerRef.current = setTimeout(() => {
-      // Trigger long-press context menu
       setContextMenu({
         x: clientX,
         y: clientY,
@@ -110,13 +116,23 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
     });
   };
 
-  // Filter notebooks
-  const filteredNotebooks = notebooks.filter((nb) => {
-    const q = searchQuery.toLowerCase();
-    return nb.title.toLowerCase().includes(q) || nb.tags?.some((t) => t.toLowerCase().includes(q));
-  });
+  // Full-Text search: searches in titles, tags, AND document text content!
+  const filteredNotebooks = notebooks
+    .filter((nb) => {
+      const q = searchQuery.toLowerCase().trim();
+      if (!q) return true;
+      if (nb.title.toLowerCase().includes(q)) return true;
+      if (nb.tags?.some((t) => t.toLowerCase().includes(q))) return true;
+      return nb.pages.some((p) => p.contentHtml && p.contentHtml.toLowerCase().includes(q));
+    })
+    .sort((a, b) => {
+      if (sortBy === 'name') return a.title.localeCompare(b.title);
+      if (sortBy === 'pages') return b.pages.length - a.pages.length;
+      return b.updatedAt - a.updatedAt;
+    });
 
-  const isInsideSpecificFolder = !['all', 'favorites', 'shared'].includes(currentFolderId);
+  const isInsideSpecificFolder = !['all', 'favorites', 'shared', 'trash'].includes(currentFolderId);
+  const isTrashView = currentFolderId === 'trash';
 
   return (
     <div
@@ -124,9 +140,10 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
       onClick={() => {
         if (contextMenu) setContextMenu(null);
         if (showNewMenu) setShowNewMenu(false);
+        if (showSortMenu) setShowSortMenu(false);
       }}
     >
-      {/* Top Goodnotes Header Bar (Matched exactly to iPad Goodnotes screenshot) */}
+      {/* Top Goodnotes Header Bar (Pure, Minimal, No Fake Upgrade / Ads) */}
       <header className="sticky top-0 z-30 bg-[#000000]/95 backdrop-blur-md px-6 py-3 flex items-center justify-between border-b border-[#18181b]">
         <div className="flex items-center gap-3">
           <button
@@ -153,57 +170,41 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
           ) : null}
         </div>
 
-        {/* Right header actions (Goodnotes screenshot layout) */}
-        <div className="flex items-center gap-4">
-          <button
-            type="button"
-            onClick={onOpenSyncModal}
-            className="flex items-center gap-1.5 px-3.5 py-1 bg-[#007aff] hover:bg-[#0062cc] active:scale-95 text-white rounded-full text-xs font-semibold shadow-sm transition-all"
-          >
-            <span>Fai l'upgrade</span>
-          </button>
-
-          {isSearchOpen ? (
-            <div className="flex items-center gap-1 bg-[#1c1c1e] px-3 py-1 rounded-full border border-[#2c2c2e]">
-              <Search className="w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                autoFocus
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Cerca documenti..."
-                className="bg-transparent text-xs text-white outline-none w-32 sm:w-48"
-              />
+        {/* Right header: Search, Google Drive Sync & Profile */}
+        <div className="flex items-center gap-3">
+          {/* Full-Text Search Bar */}
+          <div className="flex items-center gap-2 bg-[#18191e] px-3.5 py-1.5 rounded-full border border-[#2c2c2e]">
+            <Search className="w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cerca documenti o testo..."
+              className="bg-transparent text-xs text-white placeholder-slate-500 outline-none w-36 sm:w-56"
+            />
+            {searchQuery && (
               <button
                 type="button"
-                onClick={() => {
-                  setSearchQuery('');
-                  setIsSearchOpen(false);
-                }}
+                onClick={() => setSearchQuery('')}
                 className="p-0.5 text-slate-400 hover:text-white"
               >
                 <X className="w-3.5 h-3.5" />
               </button>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setIsSearchOpen(true)}
-              className="p-1 text-slate-300 hover:text-white transition-colors"
-              title="Cerca"
-            >
-              <Search className="w-5 h-5" />
-            </button>
-          )}
+            )}
+          </div>
 
+          {/* Cloud Sync Status Pill */}
           <button
             type="button"
             onClick={onOpenSyncModal}
-            className="p-1 text-slate-300 hover:text-white transition-colors"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-[#18191e] hover:bg-[#22242e] text-slate-300 hover:text-white rounded-xl text-xs font-medium border border-[#2c2d36] transition-all"
+            title="Google Drive Cloud Sync"
           >
-            <Bell className="w-5 h-5" />
+            <Cloud className="w-3.5 h-3.5 text-[#007aff]" />
+            <span>Google Drive</span>
           </button>
 
+          {/* User Profile Avatar */}
           <div
             onClick={onOpenSyncModal}
             className="w-8 h-8 rounded-full bg-[#14b8a6] text-white flex items-center justify-center font-bold text-sm cursor-pointer shadow-md hover:scale-105 transition-transform"
@@ -214,78 +215,147 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
         </div>
       </header>
 
-      {/* Big Title Row (Goodnotes Native Typography) */}
-      <div className="px-6 pt-5 pb-1">
+      {/* iPad Home Screen PWA Tip Banner (Dismissible) */}
+      {!dismissPwaTip && (
+        <div className="mx-6 mt-3 p-3 rounded-2xl bg-[#14151b] border border-[#252834] flex items-center justify-between text-xs text-slate-300">
+          <div className="flex items-center gap-2.5">
+            <Smartphone className="w-4 h-4 text-[#007aff] shrink-0" />
+            <span>
+              <b>Suggerimento iPad:</b> Tocca <b>Condividi</b> in Safari e scegli <i>"Aggiungi alla schermata Home"</i> per aprirla a schermo intero come una vera app nativa senza barre!
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setDismissPwaTip(true)}
+            className="p-1 text-slate-500 hover:text-slate-300"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Big Title Row */}
+      <div className="px-6 pt-5 pb-1 flex items-center justify-between">
         <h2 className="text-3xl font-bold text-white tracking-tight font-sans">
           {currentFolderName}
         </h2>
-      </div>
-
-      {/* Subheader Action Bar (☰ Tutto on left, + Nuovo & icons on right) */}
-      <div className="px-6 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        {isTrashView && filteredNotebooks.length > 0 && onEmptyTrash && (
           <button
             type="button"
-            className="flex items-center gap-2 text-sm font-semibold text-slate-200 hover:text-white px-2 py-1 rounded-lg hover:bg-[#18181b] transition-colors"
+            onClick={() => {
+              if (confirm('Vuoi svuotare il Cestino ed eliminare tutti i documenti per sempre?')) {
+                onEmptyTrash();
+              }
+            }}
+            className="px-3.5 py-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 rounded-xl text-xs font-semibold transition-colors flex items-center gap-1.5"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>Svuota Cestino</span>
+          </button>
+        )}
+      </div>
+
+      {/* Subheader Action Bar (Filter/Sort on left, + Nuovo & View Mode on right) */}
+      <div className="px-6 py-3 flex items-center justify-between">
+        <div className="flex items-center gap-2 relative">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowSortMenu(!showSortMenu);
+            }}
+            className="flex items-center gap-2 text-sm font-semibold text-slate-200 hover:text-white px-2.5 py-1 rounded-lg hover:bg-[#18181b] transition-colors"
           >
             <ListFilter className="w-4 h-4 text-slate-400" />
-            <span>Tutto</span>
+            <span>
+              {sortBy === 'date' ? 'Più recenti' : sortBy === 'name' ? 'Nome (A-Z)' : 'Numero pagine'}
+            </span>
+            <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
           </button>
+
+          {/* Sort Menu Popover */}
+          {showSortMenu && (
+            <div className="absolute left-0 top-full mt-1.5 w-48 bg-[#1c1c1e] border border-[#2c2c2e] rounded-2xl shadow-2xl p-1.5 z-50 flex flex-col gap-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => { setSortBy('date'); setShowSortMenu(false); }}
+                className={`px-3 py-2 rounded-xl text-left transition-colors ${sortBy === 'date' ? 'bg-[#007aff] text-white font-semibold' : 'text-slate-300 hover:bg-[#2c2c2e]'}`}
+              >
+                Data di modifica (Recenti)
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSortBy('name'); setShowSortMenu(false); }}
+                className={`px-3 py-2 rounded-xl text-left transition-colors ${sortBy === 'name' ? 'bg-[#007aff] text-white font-semibold' : 'text-slate-300 hover:bg-[#2c2c2e]'}`}
+              >
+                Nome (Alfabetico A-Z)
+              </button>
+              <button
+                type="button"
+                onClick={() => { setSortBy('pages'); setShowSortMenu(false); }}
+                className={`px-3 py-2 rounded-xl text-left transition-colors ${sortBy === 'pages' ? 'bg-[#007aff] text-white font-semibold' : 'text-slate-300 hover:bg-[#2c2c2e]'}`}
+              >
+                Numero di pagine
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="relative">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowNewMenu(!showNewMenu);
-              }}
-              className="flex items-center gap-1.5 px-4 py-1.5 bg-[#007aff] hover:bg-[#0062cc] active:scale-95 text-white rounded-full text-xs font-semibold shadow-sm transition-all"
-            >
-              <Plus className="w-4 h-4 stroke-[2.5]" />
-              <span>Nuovo</span>
-            </button>
+          {!isTrashView && (
+            <div className="relative">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowNewMenu(!showNewMenu);
+                }}
+                className="flex items-center gap-1.5 px-4 py-1.5 bg-[#007aff] hover:bg-[#0062cc] active:scale-95 text-white rounded-full text-xs font-semibold shadow-sm transition-all"
+              >
+                <Plus className="w-4 h-4 stroke-[2.5]" />
+                <span>Nuovo</span>
+              </button>
 
-            {/* + Nuovo Dropdown Menu */}
-            {showNewMenu && (
-              <div className="absolute right-0 top-full mt-2 w-60 bg-[#1c1c1e] border border-[#2c2c2e] rounded-2xl shadow-2xl p-1.5 z-50 flex flex-col gap-1 text-xs">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowNewMenu(false);
-                    onCreateNotebook();
-                  }}
-                  className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-100 hover:bg-[#2c2c2e] text-left transition-colors font-medium"
-                >
-                  <FileText className="w-4 h-4 text-[#007aff]" />
-                  <span>Nuovo Documento Word</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowNewMenu(false);
-                    onOpenImportModal();
-                  }}
-                  className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-100 hover:bg-[#2c2c2e] text-left transition-colors font-medium"
-                >
-                  <FileUp className="w-4 h-4 text-emerald-400" />
-                  <span>Importa e Converti PDF</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowNewMenu(false);
-                    onCreateFolderClick();
-                  }}
-                  className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-100 hover:bg-[#2c2c2e] text-left transition-colors font-medium"
-                >
-                  <FolderPlus className="w-4 h-4 text-amber-400" />
-                  <span>Nuova Cartella</span>
-                </button>
-              </div>
-            )}
-          </div>
+              {/* + Nuovo Dropdown Menu */}
+              {showNewMenu && (
+                <div className="absolute right-0 top-full mt-2 w-60 bg-[#1c1c1e] border border-[#2c2c2e] rounded-2xl shadow-2xl p-1.5 z-50 flex flex-col gap-1 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNewMenu(false);
+                      onCreateNotebook();
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-100 hover:bg-[#2c2c2e] text-left transition-colors font-medium"
+                  >
+                    <FileText className="w-4 h-4 text-[#007aff]" />
+                    <span>Nuovo Documento Word</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNewMenu(false);
+                      onOpenImportModal();
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-100 hover:bg-[#2c2c2e] text-left transition-colors font-medium"
+                  >
+                    <FileUp className="w-4 h-4 text-emerald-400" />
+                    <span>Importa e Converti PDF</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowNewMenu(false);
+                      onCreateFolderClick();
+                    }}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-slate-100 hover:bg-[#2c2c2e] text-left transition-colors font-medium"
+                  >
+                    <FolderPlus className="w-4 h-4 text-amber-400" />
+                    <span>Nuova Cartella</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           <button
             type="button"
@@ -307,12 +377,24 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
         </div>
       </div>
 
-      {/* Main Area: Grid or Continuous Vertical List ("Scrolling uno dopo l'altro") */}
+      {/* Main Area: Grid or Continuous Vertical List */}
       <main className="px-6 pb-24 flex-1">
+        {filteredNotebooks.length === 0 && (!folders.length || isInsideSpecificFolder) && (
+          <div className="py-20 flex flex-col items-center justify-center text-center text-slate-500">
+            <FileText className="w-12 h-12 stroke-[1.2] mb-3 text-slate-600" />
+            <h3 className="text-sm font-semibold text-slate-300">Nessun documento trovato</h3>
+            <p className="text-xs text-slate-500 mt-1 max-w-sm">
+              {isTrashView
+                ? 'Il Cestino è vuoto. I documenti che elimini compariranno qui.'
+                : 'Crea un nuovo documento Word o importa un PDF per iniziare a prendere appunti con Apple Pencil.'}
+            </p>
+          </div>
+        )}
+
         {viewMode === 'list' ? (
           <div className="flex flex-col gap-2 max-w-4xl mx-auto w-full">
             {/* List View Folders */}
-            {!isInsideSpecificFolder &&
+            {!isInsideSpecificFolder && !isTrashView &&
               folders.map((folder) => (
                 <div
                   key={folder.id}
@@ -346,16 +428,16 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                 </div>
               ))}
 
-            {/* List View Documents ("scrolling uno dopo l'altro") */}
+            {/* List View Documents */}
             {filteredNotebooks.map((nb) => (
               <div
                 key={nb.id}
-                draggable
+                draggable={!isTrashView}
                 onDragStart={(e) => e.dataTransfer.setData('text/plain', nb.id)}
                 onTouchStart={(e) => handleTouchStartItem(nb, false, e)}
                 onTouchEnd={handleTouchEndItem}
                 onContextMenu={(e) => handleContextMenuPC(nb, false, e)}
-                onClick={() => onOpenNotebook(nb.id)}
+                onClick={() => !isTrashView && onOpenNotebook(nb.id)}
                 className="flex items-center justify-between p-3.5 bg-[#121316] hover:bg-[#1a1c22] border border-[#1e2027] rounded-2xl cursor-pointer transition-colors"
               >
                 <div className="flex items-center gap-3.5">
@@ -371,28 +453,40 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                 </div>
 
                 <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
-                  <button
-                    type="button"
-                    onClick={() => onToggleFavorite(nb.id)}
-                    className="p-2 text-slate-400 hover:text-amber-400 rounded-lg transition-colors"
-                  >
-                    <Star className={`w-4 h-4 ${nb.isFavorite ? 'fill-amber-400 text-amber-400' : ''}`} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => setContextMenu({ x: e.clientX, y: e.clientY, notebook: nb })}
-                    className="p-2 text-slate-400 hover:text-white rounded-lg transition-colors"
-                  >
-                    <MoreVertical className="w-4 h-4" />
-                  </button>
+                  {isTrashView ? (
+                    <button
+                      type="button"
+                      onClick={() => onRestoreNotebook && onRestoreNotebook(nb.id)}
+                      className="px-3 py-1 bg-[#007aff]/15 hover:bg-[#007aff]/25 text-[#007aff] rounded-lg text-xs font-semibold flex items-center gap-1"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" /> Ripristina
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => onToggleFavorite(nb.id)}
+                        className="p-2 text-slate-400 hover:text-amber-400 rounded-lg transition-colors"
+                      >
+                        <Star className={`w-4 h-4 ${nb.isFavorite ? 'fill-amber-400 text-amber-400' : ''}`} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => setContextMenu({ x: e.clientX, y: e.clientY, notebook: nb })}
+                        className="p-2 text-slate-400 hover:text-white rounded-lg transition-colors"
+                      >
+                        <MoreVertical className="w-4 h-4" />
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 sm:gap-8">
-            {/* 1. Folders Display with Drop Target (Matching real Goodnotes baby-blue folder icon) */}
-            {!isInsideSpecificFolder &&
+            {/* 1. Folders Display */}
+            {!isInsideSpecificFolder && !isTrashView &&
               folders.map((folder) => (
                 <div
                   key={folder.id}
@@ -411,7 +505,6 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                   className="group flex flex-col items-center cursor-pointer text-center relative"
                   title="Tocca per aprire • Tieni premuto per opzioni"
                 >
-                  {/* Apple Light-Blue Folder Icon with star in top right */}
                   <div className="relative w-full aspect-[4/3] max-w-[170px] flex items-center justify-center transition-transform duration-200 group-hover:scale-105">
                     <svg
                       viewBox="0 0 200 150"
@@ -444,19 +537,19 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                   </div>
 
                   <span className="text-[11px] text-slate-500 mt-0.5">
-                    oggi, {new Date(folder.updatedAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(folder.updatedAt).toLocaleDateString('it-IT')}
                   </span>
                 </div>
               ))}
 
-            {/* 2. Documents Cards (Pure Clean Word Document Paper - NOT a notebook cover!) */}
+            {/* 2. Documents Cards */}
             {filteredNotebooks.map((nb) => {
               const firstPage = nb.pages[0];
 
               return (
                 <div
                   key={nb.id}
-                  draggable
+                  draggable={!isTrashView}
                   onDragStart={(e) => e.dataTransfer.setData('text/plain', nb.id)}
                   onTouchStart={(e) => handleTouchStartItem(nb, false, e)}
                   onTouchEnd={handleTouchEndItem}
@@ -464,32 +557,32 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                   className="group relative flex flex-col items-center cursor-pointer select-none"
                   title="Tocca per aprire • Tieni premuto per menu"
                 >
-                  {/* Clean Document Paper Sheet (Word Style Preview) */}
+                  {/* Clean Document Paper Sheet */}
                   <div
-                    onClick={() => onOpenNotebook(nb.id)}
+                    onClick={() => !isTrashView && onOpenNotebook(nb.id)}
                     className="relative w-full aspect-[3/4] max-w-[160px] rounded-2xl bg-[#ffffff] p-3 flex flex-col justify-between shadow-xl transition-transform duration-200 group-hover:scale-105 border border-slate-200 overflow-hidden"
                   >
-                    {/* Top corner fold */}
                     <div className="absolute top-0 right-0 w-6 h-6 bg-[#f1f5f9] rounded-bl-xl shadow-inner border-b border-l border-slate-300" />
 
-                    {/* Header chip */}
                     <div className="flex items-center justify-between z-10">
                       <span className="text-[9px] font-bold uppercase tracking-wider text-[#007aff] bg-blue-50 px-2 py-0.5 rounded-full flex items-center gap-1">
                         <FileText className="w-2.5 h-2.5" /> DOC
                       </span>
 
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onToggleFavorite(nb.id);
-                        }}
-                        className="p-1 rounded-full text-slate-400 hover:text-amber-500 transition-colors"
-                      >
-                        <Star
-                          className={`w-3.5 h-3.5 ${nb.isFavorite ? 'fill-amber-400 text-amber-400' : ''}`}
-                        />
-                      </button>
+                      {!isTrashView && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onToggleFavorite(nb.id);
+                          }}
+                          className="p-1 rounded-full text-slate-400 hover:text-amber-500 transition-colors"
+                        >
+                          <Star
+                            className={`w-3.5 h-3.5 ${nb.isFavorite ? 'fill-amber-400 text-amber-400' : ''}`}
+                          />
+                        </button>
+                      )}
                     </div>
 
                     {/* Document preview snippet */}
@@ -505,7 +598,6 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                       )}
                     </div>
 
-                    {/* Bottom page count */}
                     <div className="z-10 pt-1 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-mono">
                       <span>{nb.pages.length} {nb.pages.length === 1 ? 'pag' : 'pag'}</span>
                     </div>
@@ -514,7 +606,7 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                   {/* Title under card */}
                   <div className="mt-2.5 flex items-center justify-between w-full max-w-[160px] px-1">
                     <div
-                      onClick={() => onOpenNotebook(nb.id)}
+                      onClick={() => !isTrashView && onOpenNotebook(nb.id)}
                       className="flex-1 truncate text-left"
                     >
                       <span className="text-xs font-semibold text-white block truncate group-hover:text-[#007aff] transition-colors">
@@ -564,74 +656,105 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
           >
             {contextMenu.notebook && (
               <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nb = contextMenu.notebook!;
-                    setContextMenu(null);
-                    onOpenNotebook(nb.id);
-                  }}
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#2c2c2e] text-left transition-colors font-medium text-white"
-                >
-                  <FileText className="w-4 h-4 text-[#007aff]" />
-                  <span>Apri Documento</span>
-                </button>
+                {isTrashView ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nb = contextMenu.notebook!;
+                        setContextMenu(null);
+                        onRestoreNotebook && onRestoreNotebook(nb.id);
+                      }}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#2c2c2e] text-left transition-colors font-medium text-[#007aff]"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>Ripristina nella libreria</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nb = contextMenu.notebook!;
+                        setContextMenu(null);
+                        if (confirm(`Eliminare definitivamente "${nb.title}"? Non potrai più recuperarlo.`)) {
+                          onDeleteNotebook(nb.id);
+                        }
+                      }}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-rose-500/20 text-rose-400 text-left transition-colors font-medium"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>Elimina per sempre</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nb = contextMenu.notebook!;
+                        setContextMenu(null);
+                        onOpenNotebook(nb.id);
+                      }}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#2c2c2e] text-left transition-colors font-medium text-white"
+                    >
+                      <FileText className="w-4 h-4 text-[#007aff]" />
+                      <span>Apri Documento</span>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nb = contextMenu.notebook!;
-                    setContextMenu(null);
-                    setMoveModalNotebookId(nb.id);
-                  }}
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#2c2c2e] text-left transition-colors font-medium"
-                >
-                  <FolderInput className="w-4 h-4 text-[#007aff]" />
-                  <span>Sposta in cartella...</span>
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nb = contextMenu.notebook!;
+                        setContextMenu(null);
+                        setMoveModalNotebookId(nb.id);
+                      }}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#2c2c2e] text-left transition-colors font-medium"
+                    >
+                      <FolderInput className="w-4 h-4 text-[#007aff]" />
+                      <span>Sposta in cartella...</span>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nb = contextMenu.notebook!;
-                    setContextMenu(null);
-                    onDuplicateNotebook(nb.id);
-                  }}
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#2c2c2e] text-left transition-colors font-medium"
-                >
-                  <Copy className="w-4 h-4 text-emerald-400" />
-                  <span>Duplica</span>
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nb = contextMenu.notebook!;
+                        setContextMenu(null);
+                        onDuplicateNotebook(nb.id);
+                      }}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#2c2c2e] text-left transition-colors font-medium"
+                    >
+                      <Copy className="w-4 h-4 text-emerald-400" />
+                      <span>Duplica</span>
+                    </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nb = contextMenu.notebook!;
-                    setContextMenu(null);
-                    onExportPdfDirect(nb);
-                  }}
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#2c2c2e] text-left transition-colors font-medium"
-                >
-                  <FileDown className="w-4 h-4 text-sky-400" />
-                  <span>Esporta come PDF</span>
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nb = contextMenu.notebook!;
+                        setContextMenu(null);
+                        onExportPdfDirect(nb);
+                      }}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#2c2c2e] text-left transition-colors font-medium"
+                    >
+                      <FileDown className="w-4 h-4 text-sky-400" />
+                      <span>Esporta come PDF</span>
+                    </button>
 
-                <div className="h-px bg-[#2c2c2e] my-1" />
+                    <div className="h-px bg-[#2c2c2e] my-1" />
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    const nb = contextMenu.notebook!;
-                    setContextMenu(null);
-                    if (confirm(`Eliminare definitivamente "${nb.title}"?`)) {
-                      onDeleteNotebook(nb.id);
-                    }
-                  }}
-                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-rose-500/20 text-rose-400 text-left transition-colors font-medium"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span>Elimina</span>
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nb = contextMenu.notebook!;
+                        setContextMenu(null);
+                        onDeleteNotebook(nb.id);
+                      }}
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-rose-500/20 text-rose-400 text-left transition-colors font-medium"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>Sposta nel Cestino</span>
+                    </button>
+                  </>
+                )}
               </>
             )}
 
@@ -657,7 +780,7 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                     const f = contextMenu.folder!;
                     setContextMenu(null);
                     if (confirm(`Eliminare la cartella "${f.name}"?`)) {
-                      // Handled by sidebar or delete
+                      // Handled by folder delete
                     }
                   }}
                   className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-rose-500/20 text-rose-400 text-left transition-colors font-medium"

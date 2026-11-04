@@ -55,6 +55,8 @@ export interface Notebook {
   pages: Page[];
   tags: string[];
   isFavorite?: boolean;
+  isDeleted?: boolean;
+  deletedAt?: number;
 }
 
 export interface Folder {

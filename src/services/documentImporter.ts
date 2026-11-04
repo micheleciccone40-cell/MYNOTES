@@ -17,7 +17,8 @@ export interface ImportResult {
 }
 
 /**
- * Extracts real text content and structure from a PDF page and converts it into editable Word HTML
+ * Extracts real text content and rich structure (bold, italics, headings, columns) from a PDF page
+ * and converts it into editable Word-style HTML
  */
 async function convertPdfPageToEditableHtml(page: any): Promise<string> {
   const textContent = await page.getTextContent();
@@ -33,8 +34,9 @@ async function convertPdfPageToEditableHtml(page: any): Promise<string> {
     return '<p><br></p>';
   }
 
+  const styles = (textContent.styles || {}) as Record<string, { fontFamily?: string }>;
+
   // Sort items by Y descending (top to bottom), then by X ascending (left to right)
-  // transform: [scaleX, skewY, skewX, scaleY, translateX, translateY]
   const sortedItems = [...items].sort((a, b) => {
     const yA = a.transform[5];
     const yB = b.transform[5];
@@ -45,11 +47,18 @@ async function convertPdfPageToEditableHtml(page: any): Promise<string> {
     return a.transform[4] - b.transform[4]; // Same line, left to right
   });
 
-  // Group items into lines
+  interface TextChunk {
+    text: string;
+    isBold: boolean;
+    isItalic: boolean;
+    x: number;
+    width: number;
+  }
+
   interface TextLine {
     y: number;
     fontSize: number;
-    text: string;
+    chunks: TextChunk[];
   }
 
   const lines: TextLine[] = [];
@@ -59,26 +68,36 @@ async function convertPdfPageToEditableHtml(page: any): Promise<string> {
     const text = item.str;
     if (!text && text !== ' ') continue;
 
+    const x = Math.round(item.transform[4]);
     const y = Math.round(item.transform[5]);
     const fontSize = Math.round(Math.hypot(item.transform[0], item.transform[1]));
 
+    const fontId = item.fontName || '';
+    const styleObj = styles[fontId] || {};
+    const fontDesc = (fontId + ' ' + (styleObj.fontFamily || '')).toLowerCase();
+    const isBold = fontDesc.includes('bold') || fontDesc.includes('black') || fontDesc.includes('heavy') || fontDesc.includes('semibold');
+    const isItalic = fontDesc.includes('italic') || fontDesc.includes('oblique');
+
+    const chunk: TextChunk = {
+      text,
+      isBold,
+      isItalic,
+      x,
+      width: Math.round(item.width || 0)
+    };
+
     if (!currentLine || Math.abs(currentLine.y - y) > 6) {
-      if (currentLine && currentLine.text.trim()) {
+      if (currentLine && currentLine.chunks.length > 0) {
         lines.push(currentLine);
       }
-      currentLine = { y, fontSize, text };
+      currentLine = { y, fontSize, chunks: [chunk] };
     } else {
-      // Same line: add space if needed
-      if (!currentLine.text.endsWith(' ') && !text.startsWith(' ')) {
-        currentLine.text += ' ' + text;
-      } else {
-        currentLine.text += text;
-      }
+      currentLine.chunks.push(chunk);
       currentLine.fontSize = Math.max(currentLine.fontSize, fontSize);
     }
   }
 
-  if (currentLine && currentLine.text.trim()) {
+  if (currentLine && currentLine.chunks.length > 0) {
     lines.push(currentLine);
   }
 
@@ -90,30 +109,59 @@ async function convertPdfPageToEditableHtml(page: any): Promise<string> {
   const fontSizes = lines.map(l => l.fontSize).sort((a, b) => a - b);
   const medianFontSize = fontSizes[Math.floor(fontSizes.length / 2)] || 12;
 
-  // Build semantic editable HTML
+  // Build semantic editable HTML preserving bold, italics and table/column gaps
   let html = '';
   let inParagraph = false;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
-    const trimmed = line.text.trim();
-    if (!trimmed) continue;
+    const lineText = line.chunks.map(c => c.text).join('').trim();
+    if (!lineText) continue;
 
-    const isLargeHeading = line.fontSize >= medianFontSize * 1.5;
-    const isMediumHeading = line.fontSize >= medianFontSize * 1.25 && !isLargeHeading;
+    const isLargeHeading = line.fontSize >= medianFontSize * 1.45;
+    const isMediumHeading = line.fontSize >= medianFontSize * 1.2 && !isLargeHeading;
+
+    // Build line HTML preserving bold, italics and spacing between table columns
+    let lineContentHtml = '';
+    for (let c = 0; c < line.chunks.length; c++) {
+      const chunk = line.chunks[c];
+      const prevChunk = c > 0 ? line.chunks[c - 1] : null;
+
+      // Detect table column separation or large horizontal indentation
+      if (prevChunk) {
+        const gap = chunk.x - (prevChunk.x + prevChunk.width);
+        if (gap > 24) {
+          // Table column / tab gap
+          lineContentHtml += `<span style="display:inline-block; min-width: ${Math.min(180, Math.max(24, gap))}px;"> </span>`;
+        } else if (!prevChunk.text.endsWith(' ') && !chunk.text.startsWith(' ')) {
+          lineContentHtml += ' ';
+        }
+      }
+
+      let formattedText = escapeHtml(chunk.text);
+      if (chunk.isBold && chunk.isItalic) {
+        formattedText = `<strong><em>${formattedText}</em></strong>`;
+      } else if (chunk.isBold) {
+        formattedText = `<strong>${formattedText}</strong>`;
+      } else if (chunk.isItalic) {
+        formattedText = `<em>${formattedText}</em>`;
+      }
+
+      lineContentHtml += formattedText;
+    }
 
     if (isLargeHeading) {
       if (inParagraph) {
         html += '</p>\n';
         inParagraph = false;
       }
-      html += `<h1 style="font-size: 26px; font-weight: 700; margin: 20px 0 10px; color: #0f172a;">${escapeHtml(trimmed)}</h1>\n`;
+      html += `<h1 style="font-size: 24px; font-weight: 700; margin: 22px 0 10px; color: #0f172a; line-height: 1.3;">${lineContentHtml}</h1>\n`;
     } else if (isMediumHeading) {
       if (inParagraph) {
         html += '</p>\n';
         inParagraph = false;
       }
-      html += `<h2 style="font-size: 20px; font-weight: 600; margin: 16px 0 8px; color: #1e293b;">${escapeHtml(trimmed)}</h2>\n`;
+      html += `<h2 style="font-size: 19px; font-weight: 600; margin: 18px 0 8px; color: #1e293b; line-height: 1.4;">${lineContentHtml}</h2>\n`;
     } else {
       if (!inParagraph) {
         html += `<p style="font-size: 16px; line-height: 1.7; margin-bottom: 12px; color: #1e293b;">`;
@@ -121,10 +169,10 @@ async function convertPdfPageToEditableHtml(page: any): Promise<string> {
       } else {
         html += ' ';
       }
-      html += escapeHtml(trimmed);
+      html += lineContentHtml;
 
-      // If line ends with period or colon, end paragraph
-      if (trimmed.endsWith('.') || trimmed.endsWith(':') || trimmed.endsWith('?') || trimmed.endsWith('!')) {
+      // End paragraph if line ends with period or punctuation
+      if (lineText.endsWith('.') || lineText.endsWith(':') || lineText.endsWith('?') || lineText.endsWith('!')) {
         html += '</p>\n';
         inParagraph = false;
       }

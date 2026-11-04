@@ -21,7 +21,11 @@ import {
   ArrowLeft,
   ShieldCheck,
   Hand,
-  Plus
+  Plus,
+  Maximize2,
+  Minimize2,
+  ZoomIn,
+  ZoomOut
 } from 'lucide-react';
 import type { ToolType, PaperTemplate } from '../types';
 
@@ -55,6 +59,12 @@ interface ToolbarProps {
   onExecTextCommand: (command: string, value?: string) => void;
   currentFontSizePx: number;
   onChangeFontSizePx: (sizePx: number) => void;
+  // Chicche Pro: Zoom, Zen Focus Mode, Word Count
+  zoom?: number;
+  onChangeZoom?: (zoom: number) => void;
+  isZenMode?: boolean;
+  onToggleZenMode?: () => void;
+  wordCount?: number;
 }
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 40];
@@ -112,6 +122,11 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onExecTextCommand,
   currentFontSizePx,
   onChangeFontSizePx,
+  zoom = 1,
+  onChangeZoom,
+  isZenMode = false,
+  onToggleZenMode,
+  wordCount,
 }) => {
   const [activeTab, setActiveTab] = useState<'text' | 'pencil'>('text');
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
@@ -216,48 +231,121 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             >
               <Grid3X3 className="w-3.5 h-3.5 text-blue-400" />
               <span className="hidden md:inline capitalize">
-                {paperTemplate === 'blank' ? 'Bianco (Word)' : paperTemplate === 'ruled' ? 'A Righe' : paperTemplate === 'grid' ? 'A Quadretti' : 'Puntini'}
+                {paperTemplate === 'blank' ? 'Bianco (Word)' : paperTemplate === 'dark-blank' ? 'Nero (Word Dark)' : paperTemplate === 'ruled' ? 'A Righe' : paperTemplate === 'dark-ruled' ? 'Righe Dark' : paperTemplate === 'grid' ? 'A Quadretti' : paperTemplate === 'dark-grid' ? 'Quadretti Dark' : 'Puntini'}
               </span>
               <ChevronDown className="w-3 h-3 text-slate-400" />
             </button>
 
             {showTemplateMenu && (
-              <div className="absolute right-0 top-full mt-1.5 w-44 bg-[#1e2029] border border-[#2d303e] rounded-xl shadow-2xl p-1 z-50 flex flex-col gap-0.5">
+              <div className="absolute right-0 top-full mt-1.5 w-52 bg-[#1e2029] border border-[#2d303e] rounded-xl shadow-2xl p-1.5 z-50 flex flex-col gap-0.5">
+                <span className="text-[10px] uppercase font-bold text-slate-400 px-2 py-1">Fogli Chiari</span>
                 <button
                   type="button"
                   onClick={() => { onChangePaperTemplate('blank'); setShowTemplateMenu(false); }}
-                  className={`px-3 py-1.5 rounded-lg text-left ${paperTemplate === 'blank' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-[#282b37]'}`}
+                  className={`px-3 py-1.5 rounded-lg text-left text-xs ${paperTemplate === 'blank' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-[#282b37]'}`}
                 >
-                  Bianco (Standard Word)
+                  📄 Bianco (Standard Word)
                 </button>
                 <button
                   type="button"
                   onClick={() => { onChangePaperTemplate('ruled'); setShowTemplateMenu(false); }}
-                  className={`px-3 py-1.5 rounded-lg text-left ${paperTemplate === 'ruled' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-[#282b37]'}`}
+                  className={`px-3 py-1.5 rounded-lg text-left text-xs ${paperTemplate === 'ruled' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-[#282b37]'}`}
                 >
-                  A Righe
+                  📝 A Righe
                 </button>
                 <button
                   type="button"
                   onClick={() => { onChangePaperTemplate('grid'); setShowTemplateMenu(false); }}
-                  className={`px-3 py-1.5 rounded-lg text-left ${paperTemplate === 'grid' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-[#282b37]'}`}
+                  className={`px-3 py-1.5 rounded-lg text-left text-xs ${paperTemplate === 'grid' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-[#282b37]'}`}
                 >
-                  A Quadretti
+                  📐 A Quadretti
                 </button>
                 <button
                   type="button"
                   onClick={() => { onChangePaperTemplate('dots'); setShowTemplateMenu(false); }}
-                  className={`px-3 py-1.5 rounded-lg text-left ${paperTemplate === 'dots' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-[#282b37]'}`}
+                  className={`px-3 py-1.5 rounded-lg text-left text-xs ${paperTemplate === 'dots' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-[#282b37]'}`}
                 >
-                  A Puntini
+                  :: A Puntini
+                </button>
+
+                <div className="h-[1px] bg-[#2d303e] my-1" />
+                <span className="text-[10px] uppercase font-bold text-slate-400 px-2 py-1">Fogli Dark Mode</span>
+                <button
+                  type="button"
+                  onClick={() => { onChangePaperTemplate('dark-blank'); setShowTemplateMenu(false); }}
+                  className={`px-3 py-1.5 rounded-lg text-left text-xs ${paperTemplate === 'dark-blank' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-[#282b37]'}`}
+                >
+                  🌑 Nero Notte (Dark Word)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { onChangePaperTemplate('dark-ruled'); setShowTemplateMenu(false); }}
+                  className={`px-3 py-1.5 rounded-lg text-left text-xs ${paperTemplate === 'dark-ruled' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-[#282b37]'}`}
+                >
+                  📓 A Righe Dark
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { onChangePaperTemplate('dark-grid'); setShowTemplateMenu(false); }}
+                  className={`px-3 py-1.5 rounded-lg text-left text-xs ${paperTemplate === 'dark-grid' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-[#282b37]'}`}
+                >
+                  ⬛ A Quadretti Dark
                 </button>
               </div>
             )}
           </div>
 
-          {/* Total Pages Count & Add Page (Continuous Scroll indicator) */}
+          {/* Zoom In / Zoom Out Controls */}
+          {onChangeZoom && (
+            <div className="flex items-center bg-[#20222a] rounded-lg px-1.5 py-0.5 text-xs text-slate-300 border border-[#2d303e]">
+              <button
+                type="button"
+                onClick={() => onChangeZoom(Math.max(0.5, Number((zoom - 0.1).toFixed(1))))}
+                className="p-1 hover:text-white rounded"
+                title="Zoom indietro"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onChangeZoom(1)}
+                className="px-1 text-[11px] font-mono text-slate-300 hover:text-white font-semibold"
+                title="Ripristina zoom 100%"
+              >
+                {Math.round(zoom * 100)}%
+              </button>
+              <button
+                type="button"
+                onClick={() => onChangeZoom(Math.min(2.0, Number((zoom + 0.1).toFixed(1))))}
+                className="p-1 hover:text-white rounded"
+                title="Zoom avanti"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {/* Zen / Focus Mode Toggle */}
+          {onToggleZenMode && (
+            <button
+              type="button"
+              onClick={onToggleZenMode}
+              className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                isZenMode
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                  : 'bg-[#20222a] hover:bg-[#2b2d38] text-slate-300'
+              }`}
+              title={isZenMode ? "Esci dalla modalità Focus" : "Modalità Focus a schermo intero"}
+            >
+              {isZenMode ? <Minimize2 className="w-3.5 h-3.5 text-amber-300" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              <span className="hidden xl:inline">{isZenMode ? 'Focus Attivo' : 'Focus'}</span>
+            </button>
+          )}
+
+          {/* Total Pages Count & Add Page (Continuous Scroll indicator) & Word Count */}
           <div className="flex items-center bg-[#20222a] rounded-lg px-2.5 py-1 gap-2 text-xs text-slate-300 border border-[#2d303e]">
             <span className="text-[11px] font-medium text-slate-400">
+              {wordCount !== undefined && <span className="hidden lg:inline">{wordCount} parole • </span>}
               {totalPages} {totalPages === 1 ? 'pagina' : 'pagine'}
             </span>
             <button
@@ -284,7 +372,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
         </div>
       </div>
 
-      {/* 2. Word-Style Ribbon Toolbar */}
+      {/* 2. Word-Style Ribbon Toolbar (hidden in Focus Mode) */}
+      {!isZenMode && (
       <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-3 bg-[#13141a]">
         {activeTab === 'text' ? (
           /* WORD RICH TEXT FORMATTING CONTROLS */
@@ -587,6 +676,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
           </button>
         </div>
       </div>
+      )}
     </header>
   );
 };

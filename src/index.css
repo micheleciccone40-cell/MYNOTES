@@ -76,3 +76,42 @@ canvas.drawing-layer {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Beautiful native Word tables inside documents */
+.prose table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+  font-size: 14px;
+}
+
+.prose th, .prose td {
+  border: 1px solid #cbd5e1;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.prose th {
+  background-color: #f1f5f9;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.prose tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+
+.paper-dark-blank .prose th,
+.paper-dark-ruled .prose th,
+.paper-dark-grid .prose th {
+  background-color: #334155;
+  color: #f8fafc;
+  border-color: #475569;
+}
+
+.paper-dark-blank .prose td,
+.paper-dark-ruled .prose td,
+.paper-dark-grid .prose td {
+  border-color: #475569;
+  color: #e2e8f0;
+}

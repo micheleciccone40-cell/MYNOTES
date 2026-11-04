@@ -17,7 +17,9 @@ import { NewNotebookModal } from './components/NewNotebookModal';
 export function App() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
-  const [selectedFolderId, setSelectedFolderId] = useState<string | 'all' | 'favorites' | 'shared'>('all');
+  const [selectedFolderId, setSelectedFolderId] = useState<string | 'all' | 'favorites' | 'shared' | 'trash'>('all');
+  const [isZenMode, setIsZenMode] = useState<boolean>(false);
+  const [zoom, setZoom] = useState<number>(1);
   const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
   const [currentPageIndex, setCurrentPageIndex] = useState<number>(0);
 
@@ -388,9 +390,32 @@ export function App() {
   };
 
   const handleDeleteNotebook = async (notebookId: string) => {
-    await db.notebooks.delete(notebookId);
+    const nb = notebooks.find((n) => n.id === notebookId);
+    if (!nb) return;
+    if (nb.isDeleted || selectedFolderId === 'trash') {
+      await db.notebooks.delete(notebookId);
+    } else {
+      const updated = { ...nb, isDeleted: true, deletedAt: Date.now(), updatedAt: Date.now() };
+      await db.notebooks.put(updated);
+    }
     if (activeNotebookId === notebookId) {
       setActiveNotebookId(null);
+    }
+    refreshData();
+  };
+
+  const handleRestoreNotebook = async (notebookId: string) => {
+    const nb = notebooks.find((n) => n.id === notebookId);
+    if (!nb) return;
+    const updated = { ...nb, isDeleted: false, deletedAt: undefined, updatedAt: Date.now() };
+    await db.notebooks.put(updated);
+    refreshData();
+  };
+
+  const handleEmptyTrash = async () => {
+    const trashItems = notebooks.filter((n) => n.isDeleted);
+    for (const item of trashItems) {
+      await db.notebooks.delete(item.id);
     }
     refreshData();
   };
@@ -419,22 +444,34 @@ export function App() {
   };
 
   const folderCounts: { [key: string]: number } = {
-    all: notebooks.length,
-    favorites: notebooks.filter((n) => n.isFavorite).length
+    all: notebooks.filter((n) => !n.isDeleted).length,
+    favorites: notebooks.filter((n) => !n.isDeleted && n.isFavorite).length,
+    trash: notebooks.filter((n) => !!n.isDeleted).length
   };
   folders.forEach((f) => {
-    folderCounts[f.id] = notebooks.filter((n) => n.folderId === f.id).length;
+    folderCounts[f.id] = notebooks.filter((n) => !n.isDeleted && n.folderId === f.id).length;
   });
 
   const displayNotebooks = notebooks.filter((nb) => {
+    if (selectedFolderId === 'trash') return !!nb.isDeleted;
+    if (nb.isDeleted) return false;
     if (selectedFolderId === 'all') return true;
     if (selectedFolderId === 'favorites') return !!nb.isFavorite;
     return nb.folderId === selectedFolderId;
   });
 
+  const totalWords = activeNotebook?.pages.reduce((acc, p) => {
+    const text = (p.contentHtml || '').replace(/<[^>]+>/g, ' ').trim();
+    if (!text) return acc;
+    const words = text.split(/\s+/).filter(Boolean);
+    return acc + words.length;
+  }, 0) || 0;
+
   const currentFolder = folders.find((f) => f.id === selectedFolderId);
   const currentFolderName =
-    selectedFolderId === 'all'
+    selectedFolderId === 'trash'
+      ? 'Cestino'
+      : selectedFolderId === 'all'
       ? 'Documenti'
       : selectedFolderId === 'favorites'
       ? 'Taccuini Preferiti'
@@ -493,6 +530,11 @@ export function App() {
             onExecTextCommand={handleExecTextCommand}
             currentFontSizePx={currentFontSizePx}
             onChangeFontSizePx={handleChangeFontSizePx}
+            zoom={zoom}
+            onChangeZoom={setZoom}
+            isZenMode={isZenMode}
+            onToggleZenMode={() => setIsZenMode((prev) => !prev)}
+            wordCount={totalWords}
           />
 
           {/* Document Centered Workspace with Continuous Vertical Scrolling */}
@@ -504,6 +546,7 @@ export function App() {
               strokeColor={strokeColor}
               strokeSize={strokeSize}
               applePencilOnly={applePencilOnly}
+              zoom={zoom}
               onUpdatePage={(pageIdx, updates) => {
                 const updatedPages = activeNotebook.pages.map((p, idx) =>
                   idx === pageIdx ? { ...p, ...updates } : p
@@ -603,6 +646,8 @@ export function App() {
             onExportPdfDirect={handleExportPdf}
             onSelectFolder={setSelectedFolderId}
             onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
+            onRestoreNotebook={handleRestoreNotebook}
+            onEmptyTrash={handleEmptyTrash}
           />
         </div>
       )}

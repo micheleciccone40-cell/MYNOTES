@@ -4,7 +4,6 @@ import {
   FolderPlus,
   Star,
   Users,
-  Store,
   Cloud,
   CheckCircle2,
   Trash2,
@@ -18,12 +17,12 @@ import type { Folder, SyncStatus } from '../types';
 
 interface SidebarProps {
   folders: Folder[];
-  selectedFolderId: string | 'all' | 'favorites' | 'shared';
+  selectedFolderId: string | 'all' | 'favorites' | 'shared' | 'trash';
   counts: { [key: string]: number };
   syncStatus: SyncStatus;
   isOpenMobile: boolean;
   onCloseMobile: () => void;
-  onSelectFolder: (id: string | 'all' | 'favorites' | 'shared') => void;
+  onSelectFolder: (id: string | 'all' | 'favorites' | 'shared' | 'trash') => void;
   onCreateFolderClick: () => void;
   onEditFolderClick: (folder: Folder) => void;
   onDeleteFolderClick: (folderId: string) => void;
@@ -139,14 +138,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </button>
 
-          {/* Marketplace */}
+          {/* Cestino (Trash) */}
           <button
             type="button"
-            onClick={onOpenImportModal}
-            className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-slate-300 hover:bg-[#1a1c23] hover:text-white transition-all"
+            onClick={() => { onSelectFolder('trash'); onCloseMobile(); }}
+            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              selectedFolderId === 'trash'
+                ? 'bg-[#1d4ed8] text-white shadow-md'
+                : 'text-slate-300 hover:bg-[#1a1c23] hover:text-white'
+            }`}
           >
-            <Store className="w-5 h-5 text-slate-400" />
-            <span>Marketplace</span>
+            <div className="flex items-center gap-3">
+              <Trash2 className="w-5 h-5 text-slate-400" />
+              <span>Cestino</span>
+            </div>
+            {(counts['trash'] || 0) > 0 && (
+              <span className="text-xs text-rose-400 font-bold px-1.5 py-0.5 rounded-full bg-rose-500/10">
+                {counts['trash']}
+              </span>
+            )}
           </button>
         </div>
 
