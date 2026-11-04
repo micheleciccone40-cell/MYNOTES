@@ -10,21 +10,30 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-title" content="PadNotes" />
+    <link rel="canonical" href="https://micheleciccone40-cell.github.io/MYNOTES/" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png" />
+    <meta name="msapplication-starturl" content="/MYNOTES/" />
     <meta name="format-detection" content="telephone=no" />
     <meta name="theme-color" content="#000000" />
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     
+    <script>
+      // iOS Safari PWA / GitHub Pages normalization: ensure trailing slash
+      if (window.location.pathname === '/MYNOTES' || window.location.pathname === '/mynotes') {
+        window.location.replace('/MYNOTES/' + window.location.search + window.location.hash);
+      }
+    </script>
+
     <link rel="manifest" href="./manifest.json" />
     <title>PadNotes — Digital Notebook & PDF Studio</title>
 
     <!-- Google Identity Services for Google Drive integration -->
     <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <script type="module" crossorigin src="./assets/index-B-bY8KJE.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-41Wh_sMl.css">
+    <script type="module" crossorigin src="./assets/index-B0nDvBxl.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-BaVdKTi6.css">
   </head>
   <body class="h-full w-full overflow-hidden select-none bg-black text-slate-100 font-sans antialiased">
     <div id="root" class="h-full w-full flex flex-col"></div>
