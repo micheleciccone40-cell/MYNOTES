@@ -5,7 +5,7 @@ export interface StoredPdfFile {
   id: string;
   name: string;
   size: number;
-  data: ArrayBuffer;
+  data: Blob | ArrayBuffer;
   totalPages: number;
   createdAt: number;
   updatedAt: number;

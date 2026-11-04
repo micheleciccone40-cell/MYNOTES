@@ -23,9 +23,27 @@ export class PdfBookManager {
     folderId: string | null = null,
     onProgress?: (percent: number, current: number, total: number) => void
   ): Promise<Notebook> {
-    const arrayBuffer = await file.arrayBuffer();
+    if (onProgress) onProgress(10, 0, 100);
 
-    if (onProgress) onProgress(15, 0, 100);
+    // 1. Store as pure Blob in IndexedDB: Blob is native to IndexedDB, avoids ArrayBuffer detach entirely!
+    const bookPdfId = `book-pdf-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const pdfBlob: Blob = file.slice(0, file.size, 'application/pdf');
+
+    const storedFile: StoredPdfFile = {
+      id: bookPdfId,
+      name: file.name,
+      size: file.size,
+      data: pdfBlob,
+      totalPages: 0,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    await db.pdfFiles.put(storedFile);
+
+    if (onProgress) onProgress(20, 0, 100);
+
+    // 2. Read ArrayBuffer for pdfjsLib worker
+    const arrayBuffer = await file.arrayBuffer();
 
     const loadingTask = pdfjsLib.getDocument({
       data: new Uint8Array(arrayBuffer),
@@ -40,7 +58,10 @@ export class PdfBookManager {
       throw new Error("Il file PDF selezionato non contiene pagine valide.");
     }
 
-    if (onProgress) onProgress(40, 1, totalPages);
+    // Update totalPages in IndexedDB
+    await db.pdfFiles.update(bookPdfId, { totalPages });
+
+    if (onProgress) onProgress(45, 1, totalPages);
 
     // Get first page to compute standard aspect ratio
     const page1 = await pdfDoc.getPage(1);
@@ -69,20 +90,6 @@ export class PdfBookManager {
 
     if (onProgress) onProgress(70, Math.floor(totalPages / 2), totalPages);
 
-    const bookPdfId = `book-pdf-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-
-    // Store raw PDF in IndexedDB
-    const storedFile: StoredPdfFile = {
-      id: bookPdfId,
-      name: file.name,
-      size: file.size,
-      data: arrayBuffer,
-      totalPages,
-      createdAt: Date.now(),
-      updatedAt: Date.now()
-    };
-    await db.pdfFiles.put(storedFile);
-
     // Cache the loaded doc in memory
     documentCache.set(bookPdfId, pdfDoc);
 
@@ -103,10 +110,14 @@ export class PdfBookManager {
       });
     }
 
+    // Clean up title for elegant display
     const cleanTitle = file.name
       .replace(/\.pdf$/i, '')
-      .replace(/--.*$/, '') // Clean up long Anna's Archive / library suffixes
+      .replace(/--\s*Anna[’']s Archive.*$/i, '')
+      .replace(/--\s*[0-9a-f]{32}.*$/i, '')
+      .replace(/--\s*isbn13\s+\d+.*$/i, '')
       .replace(/_/g, ' ')
+      .replace(/\s+/g, ' ')
       .trim() || 'Libro Senza Titolo';
 
     const now = Date.now();
@@ -145,8 +156,20 @@ export class PdfBookManager {
       throw new Error(`File PDF del libro non trovato nella memoria locale (ID: ${bookPdfId})`);
     }
 
+    let buffer: ArrayBuffer;
+    if (stored.data instanceof Blob) {
+      buffer = await stored.data.arrayBuffer();
+    } else if (stored.data instanceof ArrayBuffer) {
+      buffer = stored.data;
+    } else {
+      buffer = new Uint8Array(stored.data as any).buffer;
+    }
+
+    // Always create a separate slice so worker detaching its copy won't affect stored.data
+    const workerCopy = new Uint8Array(buffer).slice(0);
+
     const loadingTask = pdfjsLib.getDocument({
-      data: new Uint8Array(stored.data),
+      data: workerCopy,
       cMapUrl: 'https://cdn.jsdelivr.net/npm/pdfjs-dist@3.11.174/cmaps/',
       cMapPacked: true,
     });
@@ -198,18 +221,20 @@ export class PdfBookManager {
       canvasRenderTasks.delete(canvas);
     } catch (err: any) {
       if (err?.name !== 'RenderingCancelledException') {
-        console.warn(`Error rendering page ${pageNumber} of ${bookPdfId}:`, err);
+        console.warn(`Error rendering page ${pageNumber} of book ${bookPdfId}:`, err);
       }
     }
   }
 
   /**
-   * Check if a book's raw PDF data is stored in IndexedDB
+   * Remove cached document when book is closed or deleted to free RAM
    */
-  async hasBookData(bookPdfId: string): Promise<boolean> {
-    if (documentCache.has(bookPdfId)) return true;
-    const count = await db.pdfFiles.where('id').equals(bookPdfId).count();
-    return count > 0;
+  clearCache(bookPdfId?: string): void {
+    if (bookPdfId) {
+      documentCache.delete(bookPdfId);
+    } else {
+      documentCache.clear();
+    }
   }
 }
 
