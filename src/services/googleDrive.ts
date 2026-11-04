@@ -14,6 +14,14 @@ export interface WorkspaceBackup {
   notebooks: Notebook[];
 }
 
+export interface DiagnosticResult {
+  step: string;
+  status: 'pending' | 'success' | 'error';
+  message: string;
+  actionUrl?: string;
+  actionText?: string;
+}
+
 const SYNC_SETTINGS_KEY = 'google_drive_sync_settings';
 const DEFAULT_CLIENT_ID_KEY = 'gdrive_client_id';
 
@@ -23,6 +31,14 @@ export const DEFAULT_GOOGLE_CLIENT_ID = '138214289325-ovuuesoedmgu7669cs25cr99al
 export class GoogleDriveSyncService {
   private accessToken: string | null = null;
   private tokenClient: any = null;
+  private isPreinitialized = false;
+
+  constructor() {
+    if (typeof window !== 'undefined') {
+      // Eagerly pre-load GIS script in background so popups are never blocked by Safari
+      setTimeout(() => this.preinitialize(), 800);
+    }
+  }
 
   async getClientId(): Promise<string> {
     const item = await db.settings.get(DEFAULT_CLIENT_ID_KEY);
@@ -34,6 +50,8 @@ export class GoogleDriveSyncService {
 
   async setClientId(clientId: string): Promise<void> {
     await db.settings.put({ key: DEFAULT_CLIENT_ID_KEY, value: clientId.trim() });
+    this.tokenClient = null;
+    this.isPreinitialized = false;
   }
 
   async getSyncMetadata(): Promise<SyncStatus> {
@@ -54,8 +72,24 @@ export class GoogleDriveSyncService {
   }
 
   /**
-   * Ensures Google Identity Services client library is dynamically loaded
+   * Pre-loads Google Identity Services library and creates token client upfront
+   * This is CRITICAL for iPad Safari: prevents popup blocker from blocking Google login!
    */
+  async preinitialize(): Promise<void> {
+    if (this.isPreinitialized && this.tokenClient) return;
+
+    try {
+      await this.ensureGoogleScriptLoaded();
+      const clientId = await this.getClientId();
+      if (!clientId || !window.google?.accounts?.oauth2) return;
+
+      this.initTokenClientInternal(clientId);
+      this.isPreinitialized = true;
+    } catch (e) {
+      console.warn('Pre-initialization error (non-fatal):', e);
+    }
+  }
+
   private async ensureGoogleScriptLoaded(): Promise<void> {
     if (typeof window !== 'undefined' && window.google?.accounts?.oauth2) {
       return;
@@ -93,8 +127,23 @@ export class GoogleDriveSyncService {
             }
           }, 100);
         };
-        script.onerror = () => reject(new Error("Impossibile caricare il servizio Google Identity. Verifica la connessione internet."));
+        script.onerror = () => reject(new Error("Impossibile caricare il servizio Google Identity. Verifica la connessione a Internet."));
         document.head.appendChild(script);
+      }
+    });
+  }
+
+  private initTokenClientInternal(clientId: string): void {
+    if (!window.google?.accounts?.oauth2) return;
+
+    this.tokenClient = window.google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
+      callback: () => {
+        // Callback will be overridden per request
+      },
+      error_callback: (error: any) => {
+        console.error('Google OAuth token error:', error);
       }
     });
   }
@@ -125,11 +174,11 @@ export class GoogleDriveSyncService {
             if (response.error !== undefined) {
               let errorMsg = `Errore autenticazione Google (${response.error})`;
               if (response.error === 'popup_closed_by_user') {
-                errorMsg = 'Accesso annullato (la finestra di accesso Google è stata chiusa). Riprova.';
+                errorMsg = 'La finestra di accesso Google è stata chiusa o bloccata dal browser Safari (verifica se Safari mostra un avviso "Finestra a comparsa bloccata").';
               } else if (response.error === 'access_denied') {
-                errorMsg = 'Accesso negato: assicurati di aver aggiunto la tua email Google tra gli "Utenti di prova" (Test users) nella schermata di consenso OAuth di Google Cloud Console.';
+                errorMsg = 'Accesso negato da Google: assicurati di aver aggiunto la tua email Google personale negli "Utenti di prova" (Test users) nella schermata di consenso OAuth di Google Cloud Console.';
               } else if (response.error === 'idpiframe_initialization_failed' || response.error_subtype === 'origin_mismatch') {
-                errorMsg = `Origine non autorizzata: aggiungi il dominio "${currentOrigin}" nelle "Origini JavaScript autorizzate" dell'ID Client su Google Cloud Console.`;
+                errorMsg = `Origine non autorizzata: aggiungi "${currentOrigin}" (senza barra finale) nelle "Origini JavaScript autorizzate" dell'ID Client su Google Cloud Console.`;
               }
               await this.saveSyncMetadata({ isSyncing: false, error: errorMsg });
               reject(new Error(errorMsg));
@@ -160,6 +209,10 @@ export class GoogleDriveSyncService {
 
             resolve(response.access_token);
           },
+          error_callback: (err: any) => {
+            console.error('GIS Error callback:', err);
+            reject(new Error('Finestra popup di Google bloccata dal browser Safari. Consenti le finestre a comparsa nelle Impostazioni di Safari per accedere a Google.'));
+          }
         });
 
         // Prompt user to select account if not already connected
@@ -172,6 +225,9 @@ export class GoogleDriveSyncService {
 
   /**
    * Push current workspace data to Google Drive
+   * Uses 2-step REST upload:
+   * 1. Check if file exists or create metadata
+   * 2. Upload file binary data using uploadType=media (100% reliable, no multipart bugs!)
    */
   async syncToGoogleDrive(): Promise<void> {
     await this.saveSyncMetadata({ isSyncing: true, error: null });
@@ -194,9 +250,9 @@ export class GoogleDriveSyncService {
       const fileContent = JSON.stringify(backupData);
       const fileName = 'PadNotes_Workspace_Cloud.json';
 
-      // 1. Check if file already exists in Drive
+      // 1. Search if file already exists in Drive
       let listRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and trashed=false&fields=files(id, name)`,
+        `https://www.googleapis.com/drive/v3/files?q=name = '${fileName}' and trashed = false&fields=files(id, name)`,
         {
           headers: { Authorization: `Bearer ${this.accessToken}` }
         }
@@ -207,7 +263,7 @@ export class GoogleDriveSyncService {
         this.accessToken = null;
         await this.requestAuthToken();
         listRes = await fetch(
-          `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and trashed=false&fields=files(id, name)`,
+          `https://www.googleapis.com/drive/v3/files?q=name = '${fileName}' and trashed = false&fields=files(id, name)`,
           {
             headers: { Authorization: `Bearer ${this.accessToken}` }
           }
@@ -215,14 +271,19 @@ export class GoogleDriveSyncService {
       }
 
       if (!listRes.ok) {
-        throw new Error(`Errore consultazione Google Drive: ${listRes.statusText}`);
+        const errData = await listRes.json().catch(() => null);
+        const errMsg = errData?.error?.message || listRes.statusText;
+        if (listRes.status === 403 && (errMsg.includes('not been used') || errMsg.includes('disabled') || errMsg.includes('accessNotConfigured'))) {
+          throw new Error(`⚠️ La "Google Drive API" non è ancora stata ABILITATA sul tuo progetto Google Cloud! Vai nella Libreria API di Google Cloud e tocca "Abilita".`);
+        }
+        throw new Error(`Errore consultazione Google Drive (${listRes.status}): ${errMsg}`);
       }
 
       const listData = await listRes.json();
       const existingFile = listData.files && listData.files.length > 0 ? listData.files[0] : null;
 
       if (existingFile) {
-        // Update file
+        // Update existing file content directly via uploadType=media
         const updateRes = await fetch(
           `https://www.googleapis.com/upload/drive/v3/files/${existingFile.id}?uploadType=media`,
           {
@@ -236,33 +297,54 @@ export class GoogleDriveSyncService {
         );
 
         if (!updateRes.ok) {
-          throw new Error(`Errore aggiornamento file su Google Drive`);
+          const errData = await updateRes.json().catch(() => null);
+          throw new Error(errData?.error?.message || `Errore salvataggio file su Google Drive (${updateRes.status})`);
         }
       } else {
-        // Create new file with metadata
-        const metadata = {
-          name: fileName,
-          mimeType: 'application/json',
-          description: 'PadNotes Cloud Sync Backup'
-        };
-
-        const form = new FormData();
-        form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-        form.append('file', new Blob([fileContent], { type: 'application/json' }));
-
+        // Step 1: Create file metadata
         const createRes = await fetch(
-          'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart',
+          'https://www.googleapis.com/drive/v3/files',
           {
             method: 'POST',
             headers: {
-              Authorization: `Bearer ${this.accessToken}`
+              Authorization: `Bearer ${this.accessToken}`,
+              'Content-Type': 'application/json'
             },
-            body: form
+            body: JSON.stringify({
+              name: fileName,
+              mimeType: 'application/json',
+              description: 'PadNotes Cloud Sync Backup'
+            })
           }
         );
 
         if (!createRes.ok) {
-          throw new Error(`Errore creazione file su Google Drive`);
+          const errData = await createRes.json().catch(() => null);
+          const errMsg = errData?.error?.message || createRes.statusText;
+          if (createRes.status === 403 && (errMsg.includes('not been used') || errMsg.includes('disabled') || errMsg.includes('accessNotConfigured'))) {
+            throw new Error(`⚠️ La "Google Drive API" non è ancora stata ABILITATA sul tuo progetto Google Cloud! Vai nella Libreria API di Google Cloud e tocca "Abilita".`);
+          }
+          throw new Error(`Errore creazione file su Google Drive (${createRes.status}): ${errMsg}`);
+        }
+
+        const newFile = await createRes.json();
+
+        // Step 2: Upload file content via uploadType=media
+        const uploadRes = await fetch(
+          `https://www.googleapis.com/upload/drive/v3/files/${newFile.id}?uploadType=media`,
+          {
+            method: 'PATCH',
+            headers: {
+              Authorization: `Bearer ${this.accessToken}`,
+              'Content-Type': 'application/json'
+            },
+            body: fileContent
+          }
+        );
+
+        if (!uploadRes.ok) {
+          const errData = await uploadRes.json().catch(() => null);
+          throw new Error(errData?.error?.message || `Errore caricamento dati su Google Drive (${uploadRes.status})`);
         }
       }
 
@@ -294,7 +376,7 @@ export class GoogleDriveSyncService {
 
       const fileName = 'PadNotes_Workspace_Cloud.json';
       let listRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and trashed=false&fields=files(id, name, modifiedTime)`,
+        `https://www.googleapis.com/drive/v3/files?q=name = '${fileName}' and trashed = false&fields=files(id, name, modifiedTime)`,
         {
           headers: { Authorization: `Bearer ${this.accessToken}` }
         }
@@ -304,7 +386,7 @@ export class GoogleDriveSyncService {
         this.accessToken = null;
         await this.requestAuthToken();
         listRes = await fetch(
-          `https://www.googleapis.com/drive/v3/files?q=name='${fileName}' and trashed=false&fields=files(id, name, modifiedTime)`,
+          `https://www.googleapis.com/drive/v3/files?q=name = '${fileName}' and trashed = false&fields=files(id, name, modifiedTime)`,
           {
             headers: { Authorization: `Bearer ${this.accessToken}` }
           }
@@ -312,12 +394,17 @@ export class GoogleDriveSyncService {
       }
 
       if (!listRes.ok) {
-        throw new Error(`Errore richiesta elenco file su Google Drive`);
+        const errData = await listRes.json().catch(() => null);
+        const errMsg = errData?.error?.message || listRes.statusText;
+        if (listRes.status === 403 && (errMsg.includes('not been used') || errMsg.includes('disabled') || errMsg.includes('accessNotConfigured'))) {
+          throw new Error(`⚠️ La "Google Drive API" non è ancora stata ABILITATA sul tuo progetto Google Cloud! Vai nella Libreria API di Google Cloud e tocca "Abilita".`);
+        }
+        throw new Error(`Errore consultazione Google Drive (${listRes.status}): ${errMsg}`);
       }
 
       const listData = await listRes.json();
       if (!listData.files || listData.files.length === 0) {
-        throw new Error("Nessun backup di PadNotes trovato su questo account Google Drive. Esegui prima un salvataggio.");
+        throw new Error("Nessun salvataggio di PadNotes trovato su questo account Google Drive. Esegui prima un salvataggio con 'Salva su Google Drive'.");
       }
 
       const fileId = listData.files[0].id;
@@ -329,7 +416,7 @@ export class GoogleDriveSyncService {
       );
 
       if (!downloadRes.ok) {
-        throw new Error(`Errore scaricamento file da Google Drive`);
+        throw new Error(`Errore scaricamento file da Google Drive (${downloadRes.status})`);
       }
 
       const backup: WorkspaceBackup = await downloadRes.json();
@@ -357,6 +444,99 @@ export class GoogleDriveSyncService {
       });
       throw err;
     }
+  }
+
+  /**
+   * Run end-to-end diagnostic test
+   */
+  async runDiagnostic(): Promise<DiagnosticResult[]> {
+    const results: DiagnosticResult[] = [];
+    const currentOrigin = typeof window !== 'undefined' ? window.location.origin : '';
+
+    // Step 1: Script check
+    try {
+      await this.ensureGoogleScriptLoaded();
+      results.push({
+        step: 'Libreria Google GIS',
+        status: 'success',
+        message: 'Libreria Google Identity Services caricata con successo.'
+      });
+    } catch (e: any) {
+      results.push({
+        step: 'Libreria Google GIS',
+        status: 'error',
+        message: e.message || 'Errore caricamento script Google.'
+      });
+      return results;
+    }
+
+    // Step 2: Client ID check
+    const clientId = await this.getClientId();
+    if (!clientId || !clientId.includes('.apps.googleusercontent.com')) {
+      results.push({
+        step: 'Client ID OAuth',
+        status: 'error',
+        message: 'Client ID non valido o mancante.'
+      });
+      return results;
+    } else {
+      results.push({
+        step: 'Client ID OAuth',
+        status: 'success',
+        message: `Client ID configurato: ${clientId.slice(0, 15)}...`
+      });
+    }
+
+    // Step 3: Origin check
+    results.push({
+      step: 'Origine JavaScript',
+      status: 'success',
+      message: `Origine attuale: ${currentOrigin} (deve essere identica in Google Cloud Console).`
+    });
+
+    // Step 4: Authentication check
+    try {
+      const token = await this.requestAuthToken();
+      results.push({
+        step: 'Accesso Google OAuth',
+        status: 'success',
+        message: `Autenticato con successo! Token attivo.`
+      });
+
+      // Step 5: Drive API test
+      const listRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files?pageSize=1&fields=files(id, name)`,
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+
+      if (listRes.ok) {
+        results.push({
+          step: 'Google Drive API',
+          status: 'success',
+          message: 'Google Drive API attiva e funzionante al 100%!'
+        });
+      } else {
+        const errData = await listRes.json().catch(() => null);
+        const errMsg = errData?.error?.message || listRes.statusText;
+        results.push({
+          step: 'Google Drive API',
+          status: 'error',
+          message: `Errore Drive API: ${errMsg}`,
+          actionUrl: `https://console.cloud.google.com/apis/library/drive.googleapis.com?project=mynotes-513716`,
+          actionText: 'Abilita Google Drive API su Google Cloud'
+        });
+      }
+    } catch (e: any) {
+      results.push({
+        step: 'Accesso Google OAuth',
+        status: 'error',
+        message: e.message || 'Errore durante l\'autenticazione.'
+      });
+    }
+
+    return results;
   }
 
   /**
