@@ -28,6 +28,7 @@ interface SidebarProps {
   onDeleteFolderClick: (folderId: string) => void;
   onOpenSyncModal: () => void;
   onOpenImportModal: () => void;
+  onMoveNotebook?: (notebookId: string, folderId: string | null) => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -42,9 +43,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onEditFolderClick,
   onDeleteFolderClick,
   onOpenSyncModal,
-  onOpenImportModal
+  onOpenImportModal,
+  onMoveNotebook
 }) => {
   const [activeFolderMenuId, setActiveFolderMenuId] = React.useState<string | null>(null);
+  const [dragOverId, setDragOverId] = React.useState<string | null>(null);
+
+  const handleDragOver = (e: React.DragEvent, id: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverId(id);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverId(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, folderId: string | null) => {
+    e.preventDefault();
+    setDragOverId(null);
+    const notebookId = e.dataTransfer.getData('text/plain');
+    if (notebookId && onMoveNotebook) {
+      onMoveNotebook(notebookId, folderId);
+    }
+  };
 
   return (
     <>
@@ -61,7 +83,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           isOpenMobile ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         }`}
       >
-        {/* Top Header: Sidebar toggle & Goodnotes Logo (identical to iPad Goodnotes screenshot) */}
+        {/* Top Header */}
         <div className="p-4 flex items-center justify-between border-b border-[#1c1e26]">
           <div className="flex items-center gap-3">
             <button
@@ -71,8 +93,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
             >
               <PanelLeft className="w-5 h-5 text-slate-300" />
             </button>
-            <h1 className="text-xl font-bold tracking-tight text-white font-sans">
-              Goodnotes
+            <h1 className="text-xl font-bold tracking-tight text-white font-sans flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#007aff]"></span>
+              PadNotes
             </h1>
           </div>
           <button
@@ -84,14 +107,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        {/* Goodnotes Main Navigation items */}
+        {/* Main Navigation */}
         <div className="px-3 py-3 flex flex-col gap-1">
-          {/* Documenti (Active Blue Pill) */}
+          {/* Documenti — also a drop target to move notebook back to root */}
           <button
             type="button"
+            data-folder-id="root"
             onClick={() => { onSelectFolder('all'); onCloseMobile(); }}
-            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-              selectedFolderId === 'all'
+            onDragOver={(e) => handleDragOver(e, 'root')}
+            onDragLeave={handleDragLeave}
+            onDrop={(e) => handleDrop(e, null)}
+            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+              dragOverId === 'root'
+                ? 'bg-[#007aff]/30 ring-2 ring-[#007aff] text-white scale-[1.02]'
+                : selectedFolderId === 'all'
                 ? 'bg-[#1d4ed8] text-white shadow-md'
                 : 'text-slate-300 hover:bg-[#1a1c23] hover:text-white'
             }`}
@@ -138,7 +167,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </button>
 
-          {/* Cestino (Trash) */}
+          {/* Cestino */}
           <button
             type="button"
             onClick={() => { onSelectFolder('trash'); onCloseMobile(); }}
@@ -160,7 +189,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </button>
         </div>
 
-        {/* Folders Section */}
+        {/* Folders Section — each folder accepts drag drops */}
         <div className="flex-1 overflow-y-auto px-3 py-2 flex flex-col gap-1 border-t border-[#1e2027]">
           <div className="flex items-center justify-between px-3 py-1.5">
             <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
@@ -179,14 +208,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {folders.map((folder) => {
             const isSelected = selectedFolderId === folder.id;
             const count = counts[folder.id] || 0;
+            const isDragOver = dragOverId === folder.id;
 
             return (
               <div key={folder.id} className="relative group">
                 <button
                   type="button"
+                  data-folder-id={folder.id}
                   onClick={() => { onSelectFolder(folder.id); onCloseMobile(); }}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                    isSelected
+                  onDragOver={(e) => handleDragOver(e, folder.id)}
+                  onDragLeave={handleDragLeave}
+                  onDrop={(e) => handleDrop(e, folder.id)}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 ${
+                    isDragOver
+                      ? 'bg-[#007aff]/30 ring-2 ring-[#007aff] text-white scale-[1.02]'
+                      : isSelected
                       ? 'bg-[#1d4ed8] text-white shadow-md'
                       : 'text-slate-300 hover:bg-[#1a1c23] hover:text-white'
                   }`}
@@ -215,7 +251,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </button>
 
                 {activeFolderMenuId === folder.id && (
-                  <div className="absolute right-2 top-full mt-1 bg-[#1a1d26] border border-[#2c2f3a] rounded-xl shadow-xl p-1 z-50 flex flex-col gap-0.5 text-xs w-36">
+                  <div className="absolute right-2 top-full mt-1 bg-[#1a1d26] border border-[#2c2f3a] rounded-xl shadow-xl p-1 z-50 flex flex-col gap-0.5 text-xs w-36 animate-in fade-in zoom-in-95 duration-100">
                     <button
                       type="button"
                       onClick={() => {
@@ -224,7 +260,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                       }}
                       className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-200 hover:bg-white/10 text-left"
                     >
-                      <Edit2 className="w-3.5 h-3.5 text-[#0a84ff]" /> Rinomina
+                      <Edit2 className="w-3.5 h-3.5 text-[#0a84ff]" /> Modifica
                     </button>
                     <button
                       type="button"
@@ -245,7 +281,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           })}
         </div>
 
-        {/* Cloud Sync & Import Document Footer */}
+        {/* Footer */}
         <div className="p-3 border-t border-[#1e2027] flex flex-col gap-2 bg-[#0e1014]">
           <button
             type="button"

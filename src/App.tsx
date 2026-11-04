@@ -443,6 +443,22 @@ export function App() {
     refreshData();
   };
 
+  const handleRenameNotebook = async (notebookId: string, newTitle: string) => {
+    const nb = notebooks.find((n) => n.id === notebookId);
+    if (!nb || !newTitle.trim()) return;
+    const updated = { ...nb, title: newTitle.trim(), updatedAt: Date.now() };
+    await db.notebooks.put(updated);
+    refreshData();
+  };
+
+  const handleRenameFolder = async (folderId: string, newName: string) => {
+    const f = folders.find((fd) => fd.id === folderId);
+    if (!f || !newName.trim()) return;
+    const updated = { ...f, name: newName.trim(), updatedAt: Date.now() };
+    await db.folders.put(updated);
+    refreshData();
+  };
+
   const folderCounts: { [key: string]: number } = {
     all: notebooks.filter((n) => !n.isDeleted).length,
     favorites: notebooks.filter((n) => !n.isDeleted && n.isFavorite).length,
@@ -455,7 +471,7 @@ export function App() {
   const displayNotebooks = notebooks.filter((nb) => {
     if (selectedFolderId === 'trash') return !!nb.isDeleted;
     if (nb.isDeleted) return false;
-    if (selectedFolderId === 'all') return true;
+    if (selectedFolderId === 'all') return !nb.folderId; // Rimosso dal posto d'origine quando spostato in cartella!
     if (selectedFolderId === 'favorites') return !!nb.isFavorite;
     return nb.folderId === selectedFolderId;
   });
@@ -619,10 +635,12 @@ export function App() {
             onDeleteFolderClick={handleDeleteFolder}
             onOpenSyncModal={() => setIsSyncModalOpen(true)}
             onOpenImportModal={() => setIsImportModalOpen(true)}
+            onMoveNotebook={handleMoveNotebook}
           />
 
           <NotebookGrid
             notebooks={displayNotebooks}
+            allNotebooks={notebooks}
             folders={folders}
             currentFolderId={selectedFolderId}
             currentFolderName={currentFolderName}
@@ -649,6 +667,9 @@ export function App() {
             onOpenMobileSidebar={() => setIsMobileSidebarOpen(true)}
             onRestoreNotebook={handleRestoreNotebook}
             onEmptyTrash={handleEmptyTrash}
+            onRenameNotebook={handleRenameNotebook}
+            onRenameFolder={handleRenameFolder}
+            onDeleteFolder={handleDeleteFolder}
           />
         </div>
       )}

@@ -115,3 +115,53 @@ canvas.drawing-layer {
   border-color: #475569;
   color: #e2e8f0;
 }
+
+
+/* Premium drag & drop animations */
+.drag-ghost {
+  opacity: 0.4;
+  transform: scale(0.9) rotate(2deg);
+}
+
+/* Smooth transitions for all interactive elements */
+.transition-premium {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Pulse animation for drop zones */
+@keyframes dropZonePulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(0, 122, 255, 0.3); }
+  50% { box-shadow: 0 0 0 8px rgba(0, 122, 255, 0); }
+}
+
+.drop-zone-active {
+  animation: dropZonePulse 1.5s ease-in-out infinite;
+}
+
+/* Smooth fade in for new elements */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+/* Scale bounce for interactive cards */
+@keyframes scaleBounce {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+
+/* Rename input glow */
+input[type="text"]:focus {
+  box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.3);
+}
