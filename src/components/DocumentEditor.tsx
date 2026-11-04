@@ -1,10 +1,140 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import type { Page, Stroke, FloatingImage, ToolType } from '../types';
 import { drawStrokeToContext, isPointNearStroke } from '../utils/drawing';
-import { Undo2, Redo2, Trash2, Move } from 'lucide-react';
+import { Undo2, Redo2, Trash2, Move, Plus } from 'lucide-react';
 
 interface DocumentEditorProps {
+  pages: Page[];
+  paperTemplate: string;
+  activeTool: ToolType;
+  strokeColor: string;
+  strokeSize: number;
+  applePencilOnly: boolean;
+  onUpdatePage: (pageIndex: number, updated: Partial<Page>) => void;
+  onAddStroke: (pageIndex: number, stroke: Stroke) => void;
+  onDeleteStroke: (pageIndex: number, strokeId: string) => void;
+  onAddPageAt: (index: number) => void;
+  onUndo?: () => void;
+  onRedo?: () => void;
+  canUndo?: boolean;
+  canRedo?: boolean;
+  zoom?: number;
+}
+
+export const DocumentEditor: React.FC<DocumentEditorProps> = ({
+  pages,
+  paperTemplate,
+  activeTool,
+  strokeColor,
+  strokeSize,
+  applePencilOnly,
+  onUpdatePage,
+  onAddStroke,
+  onDeleteStroke,
+  onAddPageAt,
+  onUndo,
+  onRedo,
+  canUndo = false,
+  canRedo = false,
+  zoom = 1,
+}) => {
+  const [gestureToast, setGestureToast] = useState<string | null>(null);
+
+  const showToast = (text: string) => {
+    setGestureToast(text);
+    setTimeout(() => setGestureToast(null), 1200);
+  };
+
+  return (
+    <div className="w-full flex flex-col items-center gap-10 py-6 select-text">
+      {/* 2-Finger Gesture HUD Toast */}
+      {gestureToast && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-black/85 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-semibold shadow-2xl border border-white/20 flex items-center gap-2">
+          <span>{gestureToast}</span>
+        </div>
+      )}
+
+      {/* Floating iPad Quick Undo/Redo Thumb Buttons (in basso a sinistra fisso) */}
+      <div className="fixed bottom-6 left-6 z-40 flex items-center gap-1.5 bg-black/70 backdrop-blur-md p-1.5 rounded-2xl border border-white/10 shadow-2xl pointer-events-auto">
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onUndo) {
+              onUndo();
+              showToast('↩ Annulla (2 dita)');
+            }
+          }}
+          disabled={!canUndo}
+          className={`p-2.5 rounded-xl transition-all ${
+            canUndo ? 'text-white hover:bg-white/20 active:scale-95' : 'text-white/30 cursor-not-allowed'
+          }`}
+          title="Annulla ultimo tratto (anche con tap 2 dita!)"
+        >
+          <Undo2 className="w-5 h-5" />
+        </button>
+
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onRedo) {
+              onRedo();
+              showToast('↪ Ripristina (3 dita)');
+            }
+          }}
+          disabled={!canRedo}
+          className={`p-2.5 rounded-xl transition-all ${
+            canRedo ? 'text-white hover:bg-white/20 active:scale-95' : 'text-white/30 cursor-not-allowed'
+          }`}
+          title="Ripristina (anche con tap 3 dita!)"
+        >
+          <Redo2 className="w-5 h-5" />
+        </button>
+      </div>
+
+      {/* CONTINUOUS VERTICAL SCROLLING PAGES LIST */}
+      {pages.map((page, index) => (
+        <SingleDocumentPage
+          key={page.id}
+          page={page}
+          pageIndex={index}
+          totalPages={pages.length}
+          paperTemplate={paperTemplate}
+          activeTool={activeTool}
+          strokeColor={strokeColor}
+          strokeSize={strokeSize}
+          applePencilOnly={applePencilOnly}
+          onUpdatePage={(updates) => onUpdatePage(index, updates)}
+          onAddStroke={(stroke) => onAddStroke(index, stroke)}
+          onDeleteStroke={(strokeId) => onDeleteStroke(index, strokeId)}
+          onAddPageAfter={() => onAddPageAt(index + 1)}
+          onUndo={onUndo}
+          onRedo={onRedo}
+          showToast={showToast}
+          zoom={zoom}
+        />
+      ))}
+
+      {/* Bottom Add Page Button */}
+      <div className="py-4">
+        <button
+          type="button"
+          onClick={() => onAddPageAt(pages.length)}
+          className="flex items-center gap-2 px-5 py-2.5 bg-[#1a1c24] hover:bg-[#252834] text-slate-200 border border-[#2b2e3b] rounded-2xl text-xs font-semibold shadow-lg transition-all"
+        >
+          <Plus className="w-4 h-4 text-blue-400" />
+          <span>Aggiungi Nuova Pagina al Documento</span>
+        </button>
+      </div>
+    </div>
+  );
+};
+
+interface SingleDocumentPageProps {
   page: Page;
+  pageIndex: number;
+  totalPages: number;
   paperTemplate: string;
   activeTool: ToolType;
   strokeColor: string;
@@ -13,16 +143,17 @@ interface DocumentEditorProps {
   onUpdatePage: (updated: Partial<Page>) => void;
   onAddStroke: (stroke: Stroke) => void;
   onDeleteStroke: (strokeId: string) => void;
+  onAddPageAfter: () => void;
   onUndo?: () => void;
   onRedo?: () => void;
-  canUndo?: boolean;
-  canRedo?: boolean;
+  showToast: (msg: string) => void;
   zoom?: number;
-  editorRef?: React.RefObject<HTMLDivElement | null>;
 }
 
-export const DocumentEditor: React.FC<DocumentEditorProps> = ({
+const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
   page,
+  pageIndex,
+  totalPages,
   paperTemplate,
   activeTool,
   strokeColor,
@@ -33,36 +164,26 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
   onDeleteStroke,
   onUndo,
   onRedo,
-  canUndo = false,
-  canRedo = false,
+  showToast,
   zoom = 1,
-  editorRef: externalEditorRef
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const internalEditorRef = useRef<HTMLDivElement | null>(null);
-  const richEditorRef = externalEditorRef || internalEditorRef;
+  const richEditorRef = useRef<HTMLDivElement | null>(null);
 
-  // In-progress stroke
   const isDrawingRef = useRef<boolean>(false);
   const currentPointsRef = useRef<[number, number, number][]>([]);
 
-  // 2-Finger tap gesture tracking for Undo
+  // 2-Finger tap gesture tracking
   const touchStartTimeRef = useRef<number>(0);
   const touchStartCountRef = useRef<number>(0);
-  const [gestureToast, setGestureToast] = useState<string | null>(null);
 
-  // Selected floating image for moving/resizing
+  // Floating image selection
   const [selectedImageId, setSelectedImageId] = useState<string | null>(null);
   const isDraggingImageRef = useRef<boolean>(false);
   const dragStartOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
-  const showToast = (text: string) => {
-    setGestureToast(text);
-    setTimeout(() => setGestureToast(null), 1200);
-  };
-
-  // Redraw canvas with all existing strokes + temporary live stroke
+  // Redraw canvas
   const redrawCanvas = useCallback((tempStroke?: Stroke) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -71,7 +192,7 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
 
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    for (const stroke of page.strokes) {
+    for (const stroke of page.strokes || []) {
       drawStrokeToContext(ctx, stroke);
     }
 
@@ -84,7 +205,7 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
     redrawCanvas();
   }, [redrawCanvas]);
 
-  // Setup high DPI canvas sizing
+  // High DPI sizing
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -100,7 +221,7 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
     redrawCanvas();
   }, [page.width, page.height, redrawCanvas]);
 
-  // Touch gesture listeners for 2-finger tap (Undo) and 3-finger tap (Redo)
+  // Touch gesture listeners (2-finger tap undo)
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
     touchStartCountRef.current = e.touches.length;
     if (e.touches.length === 2 || e.touches.length === 3) {
@@ -111,7 +232,6 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
   const handleTouchEnd = (e: React.TouchEvent<HTMLCanvasElement>) => {
     const duration = Date.now() - touchStartTimeRef.current;
 
-    // 2-FINGER TAP UNDO GESTURE
     if (touchStartCountRef.current === 2 && duration < 380 && e.touches.length === 0) {
       if (onUndo) {
         onUndo();
@@ -126,7 +246,6 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
     touchStartCountRef.current = 0;
   };
 
-  // Coordinates helper
   const getCoordinates = (e: React.PointerEvent<HTMLCanvasElement>): [number, number, number] => {
     const canvas = canvasRef.current;
     if (!canvas) return [0, 0, 0.5];
@@ -137,13 +256,8 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
     return [x, y, pressure];
   };
 
-  // Drawing pointer events
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    // If in Text mode, let the user click directly into the Word document!
-    if (activeTool === 'text') {
-      return;
-    }
-
+    if (activeTool === 'text') return;
     if (touchStartCountRef.current >= 2) return;
     if (applePencilOnly && e.pointerType === 'touch') return;
 
@@ -152,7 +266,7 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
 
     if (activeTool === 'eraser') {
       isDrawingRef.current = true;
-      const strokeToErase = page.strokes.slice().reverse().find(s => isPointNearStroke(x, y, s, 22));
+      const strokeToErase = (page.strokes || []).slice().reverse().find(s => isPointNearStroke(x, y, s, 22));
       if (strokeToErase) {
         onDeleteStroke(strokeToErase.id);
       }
@@ -182,7 +296,7 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
     const [x, y, pressure] = getCoordinates(e);
 
     if (activeTool === 'eraser') {
-      const strokeToErase = page.strokes.slice().reverse().find(s => isPointNearStroke(x, y, s, 20));
+      const strokeToErase = (page.strokes || []).slice().reverse().find(s => isPointNearStroke(x, y, s, 20));
       if (strokeToErase) {
         onDeleteStroke(strokeToErase.id);
       }
@@ -225,14 +339,12 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
     }
   };
 
-  // Sync contentEditable changes back to page.contentHtml
   const handleContentInput = () => {
     if (richEditorRef.current) {
       onUpdatePage({ contentHtml: richEditorRef.current.innerHTML });
     }
   };
 
-  // Freeform Image dragging and resizing
   const handleStartMoveImage = (e: React.PointerEvent, img: FloatingImage) => {
     e.stopPropagation();
     setSelectedImageId(img.id);
@@ -258,7 +370,6 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
     if (selectedImageId === imgId) setSelectedImageId(null);
   };
 
-  // Paper Background style
   const getPaperClass = () => {
     if (paperTemplate === 'blank') return 'paper-blank';
     if (paperTemplate === 'ruled') return 'paper-ruled';
@@ -270,181 +381,138 @@ export const DocumentEditor: React.FC<DocumentEditorProps> = ({
   };
 
   return (
-    <div
-      ref={containerRef}
-      className={`relative mx-auto rounded shadow-[0_20px_50px_rgba(0,0,0,0.6)] select-text transition-all overflow-hidden ${getPaperClass()}`}
-      style={{
-        width: page.width * zoom,
-        minHeight: page.height * zoom,
-      }}
-      onClick={() => {
-        // If clicking on paper in text mode, focus the document surface immediately
-        if (activeTool === 'text' && richEditorRef.current) {
-          richEditorRef.current.focus();
-        }
-      }}
-    >
-      {/* 2-Finger Gesture HUD Toast */}
-      {gestureToast && (
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-black/85 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-semibold shadow-2xl border border-white/20 flex items-center gap-2">
-          <span>{gestureToast}</span>
-        </div>
-      )}
-
-      {/* Floating iPad Quick Undo/Redo Thumb Buttons */}
-      <div className="absolute bottom-5 left-5 z-30 flex items-center gap-1.5 bg-black/60 backdrop-blur-md p-1 rounded-2xl border border-white/10 shadow-xl pointer-events-auto">
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (onUndo) {
-              onUndo();
-              showToast('↩ Annulla');
-            }
-          }}
-          disabled={!canUndo}
-          className={`p-2.5 rounded-xl transition-all ${
-            canUndo ? 'text-white hover:bg-white/20 active:scale-95' : 'text-white/30 cursor-not-allowed'
-          }`}
-          title="Annulla (anche con tap 2 dita sullo schermo!)"
-        >
-          <Undo2 className="w-4 h-4" />
-        </button>
-
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            if (onRedo) {
-              onRedo();
-              showToast('↪ Ripristina');
-            }
-          }}
-          disabled={!canRedo}
-          className={`p-2.5 rounded-xl transition-all ${
-            canRedo ? 'text-white hover:bg-white/20 active:scale-95' : 'text-white/30 cursor-not-allowed'
-          }`}
-          title="Ripristina (anche con tap 3 dita!)"
-        >
-          <Redo2 className="w-4 h-4" />
-        </button>
+    <div className="flex flex-col items-center group/page relative">
+      {/* Page Header Indicator */}
+      <div className="w-full max-w-[820px] flex items-center justify-between px-3 py-1 text-[11px] text-slate-500 font-mono">
+        <span>Pagina {pageIndex + 1} di {totalPages}</span>
+        <span className="opacity-0 group-hover/page:opacity-100 transition-opacity">Foglio Bianco Word</span>
       </div>
 
-      {/* 1. PDF / Background Document Image Layer (if imported) */}
-      {page.backgroundImageData && (
-        <img
-          src={page.backgroundImageData}
-          alt={`Pagina ${page.pageNumber}`}
-          className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-          draggable={false}
-        />
-      )}
-
-      {/* 2. Direct Word Document Rich-Text Surface ("Scrivo Subito, Niente Blocchi") */}
+      {/* Sheet Body */}
       <div
-        ref={richEditorRef}
-        contentEditable={activeTool === 'text'}
-        suppressContentEditableWarning
-        onInput={handleContentInput}
-        onBlur={handleContentInput}
-        style={{
-          minHeight: `${page.height}px`,
-          padding: '64px 60px',
-          outline: 'none',
-          color: paperTemplate.startsWith('dark') ? '#f1f5f9' : '#0f172a',
-          fontSize: '16px',
-          lineHeight: '1.7',
-          fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-        }}
-        className="w-full prose max-w-none cursor-text leading-relaxed select-text"
-        dangerouslySetInnerHTML={{ __html: page.contentHtml || '<p><br></p>' }}
-      />
-
-      {/* 3. Freeform Floating Images Layer (Impaginazione libera: sposta dove vuoi!) */}
-      {(page.images || []).map((img) => {
-        const isSelected = selectedImageId === img.id;
-        return (
-          <div
-            key={img.id}
-            style={{
-              position: 'absolute',
-              left: `${img.x}px`,
-              top: `${img.y}px`,
-              width: `${img.width}px`,
-              height: `${img.height}px`,
-              zIndex: 25,
-            }}
-            className={`group rounded-lg select-none ${isSelected ? 'ring-2 ring-blue-500 shadow-2xl' : 'hover:ring-1 hover:ring-blue-300'}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              setSelectedImageId(img.id);
-            }}
-          >
-            <img
-              src={img.src}
-              alt="Immagine inserita"
-              className="w-full h-full object-cover rounded-lg pointer-events-none"
-              draggable={false}
-            />
-
-            {/* Handle for free movement */}
-            <div
-              onPointerDown={(e) => handleStartMoveImage(e, img)}
-              className="absolute -top-3 -left-3 p-1.5 bg-blue-600 text-white rounded-full shadow-lg cursor-move opacity-0 group-hover:opacity-100 transition-opacity"
-              title="Trascina per spostare liberamente"
-            >
-              <Move className="w-3.5 h-3.5" />
-            </div>
-
-            {/* Resizing controls */}
-            {isSelected && (
-              <div className="absolute -bottom-3 -right-3 flex items-center gap-1 bg-[#181a24] border border-slate-700 px-2 py-0.5 rounded-full shadow-lg text-[10px] text-white">
-                <button
-                  type="button"
-                  onClick={(e) => handleResizeImage(e, img, -30)}
-                  className="px-1 hover:text-blue-400 font-bold"
-                  title="Rimpicciolisci"
-                >
-                  -
-                </button>
-                <button
-                  type="button"
-                  onClick={(e) => handleResizeImage(e, img, 30)}
-                  className="px-1 hover:text-blue-400 font-bold"
-                  title="Ingrandisci"
-                >
-                  +
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteImage(img.id)}
-                  className="px-1 text-red-400 hover:text-red-300 ml-1"
-                  title="Elimina immagine"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* 4. Apple Pencil Drawing Canvas Overlay */}
-      <canvas
-        ref={canvasRef}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        onPointerDown={handlePointerDown}
-        onPointerMove={handlePointerMove}
-        onPointerUp={handlePointerUp}
-        onPointerCancel={handlePointerUp}
+        ref={containerRef}
+        className={`relative rounded shadow-[0_20px_50px_rgba(0,0,0,0.6)] select-text transition-all overflow-hidden ${getPaperClass()}`}
         style={{
           width: page.width * zoom,
-          height: page.height * zoom,
-          pointerEvents: activeTool === 'text' ? 'none' : 'auto',
+          minHeight: page.height * zoom,
         }}
-        className="drawing-layer absolute inset-0 cursor-crosshair z-20"
-      />
+        onClick={() => {
+          if (activeTool === 'text' && richEditorRef.current) {
+            richEditorRef.current.focus();
+          }
+        }}
+      >
+        {/* PDF Background (if raster/scanned PDF) */}
+        {page.backgroundImageData && (
+          <img
+            src={page.backgroundImageData}
+            alt={`Pagina ${page.pageNumber}`}
+            className="absolute inset-0 w-full h-full object-contain pointer-events-none"
+            draggable={false}
+          />
+        )}
+
+        {/* Real Editable Word Rich Text Surface */}
+        <div
+          ref={richEditorRef}
+          contentEditable={activeTool === 'text'}
+          suppressContentEditableWarning
+          onInput={handleContentInput}
+          onBlur={handleContentInput}
+          style={{
+            minHeight: `${page.height}px`,
+            padding: '64px 60px',
+            outline: 'none',
+            color: paperTemplate.startsWith('dark') ? '#f1f5f9' : '#0f172a',
+            fontSize: '16px',
+            lineHeight: '1.7',
+            fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+          }}
+          className="w-full prose max-w-none cursor-text leading-relaxed select-text"
+          dangerouslySetInnerHTML={{ __html: page.contentHtml || '<p><br></p>' }}
+        />
+
+        {/* Freeform Floating Images */}
+        {(page.images || []).map((img) => {
+          const isSelected = selectedImageId === img.id;
+          return (
+            <div
+              key={img.id}
+              style={{
+                position: 'absolute',
+                left: `${img.x}px`,
+                top: `${img.y}px`,
+                width: `${img.width}px`,
+                height: `${img.height}px`,
+                zIndex: 25,
+              }}
+              className={`group/img rounded-lg select-none ${isSelected ? 'ring-2 ring-blue-500 shadow-2xl' : 'hover:ring-1 hover:ring-blue-300'}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                setSelectedImageId(img.id);
+              }}
+            >
+              <img
+                src={img.src}
+                alt="Immagine inserita"
+                className="w-full h-full object-cover rounded-lg pointer-events-none"
+                draggable={false}
+              />
+
+              <div
+                onPointerDown={(e) => handleStartMoveImage(e, img)}
+                className="absolute -top-3 -left-3 p-1.5 bg-blue-600 text-white rounded-full shadow-lg cursor-move opacity-0 group-hover/img:opacity-100 transition-opacity"
+                title="Trascina per spostare liberamente"
+              >
+                <Move className="w-3.5 h-3.5" />
+              </div>
+
+              {isSelected && (
+                <div className="absolute -bottom-3 -right-3 flex items-center gap-1 bg-[#181a24] border border-slate-700 px-2 py-0.5 rounded-full shadow-lg text-[10px] text-white">
+                  <button
+                    type="button"
+                    onClick={(e) => handleResizeImage(e, img, -30)}
+                    className="px-1 hover:text-blue-400 font-bold"
+                  >
+                    -
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => handleResizeImage(e, img, 30)}
+                    className="px-1 hover:text-blue-400 font-bold"
+                  >
+                    +
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteImage(img.id)}
+                    className="px-1 text-red-400 hover:text-red-300 ml-1"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Apple Pencil Canvas Layer */}
+        <canvas
+          ref={canvasRef}
+          onTouchStart={handleTouchStart}
+          onTouchEnd={handleTouchEnd}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={handlePointerUp}
+          onPointerCancel={handlePointerUp}
+          style={{
+            width: page.width * zoom,
+            height: page.height * zoom,
+            pointerEvents: activeTool === 'text' ? 'none' : 'auto',
+          }}
+          className="drawing-layer absolute inset-0 cursor-crosshair z-20"
+        />
+      </div>
     </div>
   );
 };

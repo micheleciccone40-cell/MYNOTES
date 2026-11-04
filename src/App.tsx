@@ -183,26 +183,6 @@ export function App() {
     reader.readAsDataURL(file);
   };
 
-  // Add Stroke with Undo History
-  const handleAddStroke = useCallback((stroke: Stroke) => {
-    if (!currentPage) return;
-    setUndoStack((prev) => [...prev, currentPage.strokes]);
-    setRedoStack([]);
-    handleUpdatePage({
-      strokes: [...currentPage.strokes, stroke]
-    });
-  }, [currentPage, handleUpdatePage]);
-
-  // Delete Stroke (used by eraser)
-  const handleDeleteStroke = useCallback((strokeId: string) => {
-    if (!currentPage) return;
-    setUndoStack((prev) => [...prev, currentPage.strokes]);
-    setRedoStack([]);
-    handleUpdatePage({
-      strokes: currentPage.strokes.filter((s) => s.id !== strokeId)
-    });
-  }, [currentPage, handleUpdatePage]);
-
   // Undo (also triggered by 2-finger tap on screen!)
   const handleUndo = useCallback(() => {
     if (undoStack.length === 0 || !currentPage) return;
@@ -374,17 +354,17 @@ export function App() {
 
   const handleImportComplete = async (result: ImportResult) => {
     const now = Date.now();
-    const defaultFolder = ['all', 'favorites', 'shared'].includes(selectedFolderId) ? null : (selectedFolderId as string);
+    const targetFolder = ['all', 'favorites', 'shared'].includes(selectedFolderId) ? null : (selectedFolderId as string);
 
     const importedNotebook: Notebook = {
-      id: `imported-${now}`,
+      id: `doc-${now}`,
       title: result.title,
-      folderId: defaultFolder,
+      folderId: targetFolder, // Sotto la cartella attiva!
       createdAt: now,
       updatedAt: now,
       paperTemplate: 'blank',
-      coverColor: result.sourceType === 'pdf' ? '#dc2626' : result.sourceType === 'pages' ? '#d97706' : '#2563eb',
-      tags: [result.sourceType, 'importato'],
+      coverColor: '#1e293b',
+      tags: [result.sourceType],
       pages: result.pages
     };
 
@@ -392,6 +372,7 @@ export function App() {
     await refreshData();
     setActiveNotebookId(importedNotebook.id);
     setCurrentPageIndex(0);
+    setActiveTool('text');
 
     if (result.warning) {
       alert(result.warning);
@@ -501,24 +482,61 @@ export function App() {
             onChangeFontSizePx={handleChangeFontSizePx}
           />
 
-          {/* Document Centered Workspace */}
-          <div className="flex-1 overflow-auto bg-[#0a0b0e] p-4 sm:p-10 flex items-start justify-center">
+          {/* Document Centered Workspace with Continuous Vertical Scrolling */}
+          <div className="flex-1 overflow-auto bg-[#0a0b0e] px-4 sm:px-10 flex items-start justify-center">
             <DocumentEditor
-              key={currentPage.id}
-              page={currentPage}
+              pages={activeNotebook.pages}
               paperTemplate={activeNotebook.paperTemplate}
               activeTool={activeTool}
               strokeColor={strokeColor}
               strokeSize={strokeSize}
               applePencilOnly={applePencilOnly}
-              onUpdatePage={handleUpdatePage}
-              onAddStroke={handleAddStroke}
-              onDeleteStroke={handleDeleteStroke}
+              onUpdatePage={(pageIdx, updates) => {
+                const updatedPages = activeNotebook.pages.map((p, idx) =>
+                  idx === pageIdx ? { ...p, ...updates } : p
+                );
+                saveNotebook({ ...activeNotebook, pages: updatedPages, updatedAt: Date.now() });
+              }}
+              onAddStroke={(pageIdx, stroke) => {
+                const targetPage = activeNotebook.pages[pageIdx];
+                if (!targetPage) return;
+                setUndoStack((prev) => [...prev, targetPage.strokes || []]);
+                setRedoStack([]);
+                const updatedPages = activeNotebook.pages.map((p, idx) =>
+                  idx === pageIdx ? { ...p, strokes: [...(p.strokes || []), stroke] } : p
+                );
+                saveNotebook({ ...activeNotebook, pages: updatedPages, updatedAt: Date.now() });
+              }}
+              onDeleteStroke={(pageIdx, strokeId) => {
+                const targetPage = activeNotebook.pages[pageIdx];
+                if (!targetPage) return;
+                setUndoStack((prev) => [...prev, targetPage.strokes || []]);
+                setRedoStack([]);
+                const updatedPages = activeNotebook.pages.map((p, idx) =>
+                  idx === pageIdx ? { ...p, strokes: (p.strokes || []).filter(s => s.id !== strokeId) } : p
+                );
+                saveNotebook({ ...activeNotebook, pages: updatedPages, updatedAt: Date.now() });
+              }}
+              onAddPageAt={(insertIndex) => {
+                const newPage: Page = {
+                  id: `page-${Date.now()}-${insertIndex + 1}`,
+                  pageNumber: insertIndex + 1,
+                  backgroundType: 'template',
+                  width: 820,
+                  height: 1160,
+                  strokes: [],
+                  images: [],
+                  contentHtml: '<p><br></p>'
+                };
+                const updatedPages = [...activeNotebook.pages];
+                updatedPages.splice(insertIndex, 0, newPage);
+                updatedPages.forEach((p, i) => (p.pageNumber = i + 1));
+                saveNotebook({ ...activeNotebook, pages: updatedPages, updatedAt: Date.now() });
+              }}
               onUndo={handleUndo}
               onRedo={handleRedo}
               canUndo={undoStack.length > 0}
               canRedo={redoStack.length > 0}
-              editorRef={editorRef}
             />
           </div>
         </div>

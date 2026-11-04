@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   Plus,
   Search,
@@ -17,7 +17,9 @@ import {
   LayoutGrid,
   BookPlus,
   FolderPlus,
-  X
+  FileText,
+  X,
+  Edit2
 } from 'lucide-react';
 import type { Notebook, Folder } from '../types';
 
@@ -61,10 +63,54 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [showNewMenu, setShowNewMenu] = useState(false);
-  const [activeMenuNotebookId, setActiveMenuNotebookId] = useState<string | null>(null);
+
+  // Context Menu state (for long-press on iPad or right-click on PC)
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    notebook?: Notebook;
+    folder?: Folder;
+  } | null>(null);
+
   const [moveModalNotebookId, setMoveModalNotebookId] = useState<string | null>(null);
 
-  // Filter notebooks by title
+  // Long-press timer ref for iPad touch
+  const longPressTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleTouchStartItem = (item: Notebook | Folder, isFolder: boolean, e: React.TouchEvent) => {
+    const touch = e.touches[0];
+    const clientX = touch.clientX;
+    const clientY = touch.clientY;
+
+    longPressTimerRef.current = setTimeout(() => {
+      // Trigger long-press context menu
+      setContextMenu({
+        x: clientX,
+        y: clientY,
+        notebook: !isFolder ? (item as Notebook) : undefined,
+        folder: isFolder ? (item as Folder) : undefined
+      });
+    }, 450);
+  };
+
+  const handleTouchEndItem = () => {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+  };
+
+  const handleContextMenuPC = (item: Notebook | Folder, isFolder: boolean, e: React.MouseEvent) => {
+    e.preventDefault();
+    setContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      notebook: !isFolder ? (item as Notebook) : undefined,
+      folder: isFolder ? (item as Folder) : undefined
+    });
+  };
+
+  // Filter notebooks
   const filteredNotebooks = notebooks.filter((nb) => {
     const q = searchQuery.toLowerCase();
     return nb.title.toLowerCase().includes(q) || nb.tags?.some((t) => t.toLowerCase().includes(q));
@@ -73,9 +119,15 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
   const isInsideSpecificFolder = !['all', 'favorites', 'shared'].includes(currentFolderId);
 
   return (
-    <div className="flex-1 flex flex-col h-full bg-[#0c0d11] text-slate-100 overflow-y-auto select-none">
-      {/* Top Goodnotes Header Bar (matching screenshot 2) */}
-      <header className="sticky top-0 z-30 bg-[#0c0d11]/95 backdrop-blur-md px-6 py-3 flex items-center justify-between border-b border-[#181a22]">
+    <div
+      className="flex-1 flex flex-col h-full bg-[#0c0d10] text-slate-100 overflow-y-auto select-none"
+      onClick={() => {
+        if (contextMenu) setContextMenu(null);
+        if (showNewMenu) setShowNewMenu(false);
+      }}
+    >
+      {/* Top Goodnotes Header Bar */}
+      <header className="sticky top-0 z-30 bg-[#0c0d10]/95 backdrop-blur-md px-6 py-3 flex items-center justify-between border-b border-[#181a22]">
         <div className="flex items-center gap-3">
           <button
             type="button"
@@ -85,7 +137,7 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
             <Menu className="w-5 h-5" />
           </button>
           
-          {/* Breadcrumbs if inside a folder */}
+          {/* Breadcrumbs */}
           {isInsideSpecificFolder ? (
             <div className="flex items-center gap-2 text-sm">
               <button
@@ -105,7 +157,7 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
           )}
         </div>
 
-        {/* Right header actions: Fai l'upgrade / Memoria Cloud pill, Search, Bell, Profile Avatar */}
+        {/* Right header actions */}
         <div className="flex items-center gap-4">
           <button
             type="button"
@@ -123,7 +175,7 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                 autoFocus
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Cerca appunti..."
+                placeholder="Cerca documenti..."
                 className="bg-transparent text-xs text-white outline-none w-32 sm:w-44"
               />
               <button
@@ -156,7 +208,6 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
             <Bell className="w-5 h-5" />
           </button>
 
-          {/* User Profile Avatar (matching teal circle with "M" in screenshot 2) */}
           <div
             onClick={onOpenSyncModal}
             className="w-8 h-8 rounded-full bg-[#14b8a6] text-white flex items-center justify-center font-bold text-sm cursor-pointer shadow-md hover:scale-105 transition-transform"
@@ -167,9 +218,8 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
         </div>
       </header>
 
-      {/* Sub-Header Actions Row: Tutto ⌵ on the left, + Nuovo, LayoutGrid, Cloud on the right */}
+      {/* Subheader Filter Row */}
       <div className="px-6 py-4 flex items-center justify-between">
-        {/* Left Filter: Tutto ⌵ */}
         <div className="flex items-center gap-2">
           <button
             type="button"
@@ -181,12 +231,14 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
           </button>
         </div>
 
-        {/* Right Actions: + Nuovo Button, Grid, Cloud */}
         <div className="flex items-center gap-3">
           <div className="relative">
             <button
               type="button"
-              onClick={() => setShowNewMenu(!showNewMenu)}
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowNewMenu(!showNewMenu);
+              }}
               className="flex items-center gap-1.5 px-4 py-1.5 bg-[#0a84ff] hover:bg-[#0071e3] active:scale-95 text-white rounded-full text-xs font-bold shadow-md shadow-blue-500/30 transition-all"
             >
               <Plus className="w-4 h-4" />
@@ -195,7 +247,7 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
 
             {/* + Nuovo Dropdown Menu */}
             {showNewMenu && (
-              <div className="absolute right-0 top-full mt-2 w-52 bg-[#181b24] border border-slate-700 rounded-2xl shadow-2xl p-1.5 z-50 flex flex-col gap-1 text-xs">
+              <div className="absolute right-0 top-full mt-2 w-56 bg-[#181b24] border border-slate-700 rounded-2xl shadow-2xl p-1.5 z-50 flex flex-col gap-1 text-xs">
                 <button
                   type="button"
                   onClick={() => {
@@ -205,7 +257,7 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                   className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-200 hover:bg-[#252a37] text-left transition-colors font-medium"
                 >
                   <BookPlus className="w-4 h-4 text-blue-400" />
-                  <span>Nuovo Taccuino</span>
+                  <span>Nuovo Documento Word</span>
                 </button>
                 <button
                   type="button"
@@ -216,7 +268,7 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                   className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-200 hover:bg-[#252a37] text-left transition-colors font-medium"
                 >
                   <FileUp className="w-4 h-4 text-emerald-400" />
-                  <span>Importa Documento (PDF)</span>
+                  <span>Importa e Converti PDF</span>
                 </button>
                 <button
                   type="button"
@@ -252,18 +304,30 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
         </div>
       </div>
 
-      {/* Main Grid Area: Goodnotes-style Folders & Notebooks */}
+      {/* Main Grid Area */}
       <main className="px-6 pb-24 flex-1">
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 sm:gap-8">
-          {/* 1. Folders Display (matching screenshot 2 exactly!) */}
+          {/* 1. Folders Display with Drop Target */}
           {!isInsideSpecificFolder &&
             folders.map((folder) => (
               <div
                 key={folder.id}
                 onClick={() => onSelectFolder(folder.id)}
-                className="group flex flex-col items-center cursor-pointer text-center"
+                onTouchStart={(e) => handleTouchStartItem(folder, true, e)}
+                onTouchEnd={handleTouchEndItem}
+                onContextMenu={(e) => handleContextMenuPC(folder, true, e)}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const draggedNotebookId = e.dataTransfer.getData('text/plain');
+                  if (draggedNotebookId) {
+                    onMoveNotebook(draggedNotebookId, folder.id);
+                  }
+                }}
+                className="group flex flex-col items-center cursor-pointer text-center relative"
+                title="Tocca per aprire • Tieni premuto per menu opzioni • Trascina file qui per spostarli"
               >
-                {/* Classic Apple Light-Blue Folder Icon from screenshot 2 */}
+                {/* Apple Light-Blue Folder Icon */}
                 <div className="relative w-full aspect-[4/3] max-w-[170px] flex items-center justify-center transition-transform duration-200 group-hover:scale-105">
                   <svg
                     viewBox="0 0 200 150"
@@ -271,12 +335,10 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                     xmlns="http://www.w3.org/2000/svg"
                     className="w-full h-full drop-shadow-xl"
                   >
-                    {/* Folder Tab on top left */}
                     <path
                       d="M16 26C16 19.3726 21.3726 14 28 14H78C82.4183 14 86.5398 16.2917 88.8893 20.051L94.1107 28.4079C96.4602 32.1672 100.582 34.4589 105 34.4589H172C178.627 34.4589 184 39.8315 184 46.4589V124C184 130.627 178.627 136 172 136H28C21.3726 136 16 130.627 16 124V26Z"
                       fill={folder.color || '#70b1ff'}
                     />
-                    {/* Front Folder Body */}
                     <rect
                       x="16"
                       y="38"
@@ -287,88 +349,85 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                     />
                   </svg>
 
-                  {/* Star Icon in top-right of the folder (exact as in screenshot 2) */}
                   <div className="absolute top-8 right-6 z-10 text-white/90 drop-shadow">
                     <Star className="w-4 h-4 stroke-[2]" />
                   </div>
                 </div>
 
-                {/* Folder Title with chevron down (like "Mass media ⌵") */}
                 <div className="mt-2.5 flex items-center gap-1 font-semibold text-xs text-slate-100 group-hover:text-blue-400 transition-colors">
                   <span className="truncate max-w-[130px]">{folder.name}</span>
                   <ChevronDown className="w-3 h-3 text-slate-400" />
                 </div>
 
-                {/* Subtitle date (like "oggi, 16:38") */}
                 <span className="text-[11px] text-slate-500 mt-0.5">
                   {new Date(folder.updatedAt).toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
             ))}
 
-          {/* 2. Notebooks Cards */}
+          {/* 2. Documents Cards (Draggable + Long-Press Menu on iPad) */}
           {filteredNotebooks.map((nb) => {
             const firstPage = nb.pages[0];
-            const isMenuOpen = activeMenuNotebookId === nb.id;
 
             return (
               <div
                 key={nb.id}
-                className="group relative flex flex-col items-center cursor-pointer"
+                draggable
+                onDragStart={(e) => e.dataTransfer.setData('text/plain', nb.id)}
+                onTouchStart={(e) => handleTouchStartItem(nb, false, e)}
+                onTouchEnd={handleTouchEndItem}
+                onContextMenu={(e) => handleContextMenuPC(nb, false, e)}
+                className="group relative flex flex-col items-center cursor-pointer select-none"
+                title="Tocca per aprire • Tieni premuto per menu a pressione"
               >
-                {/* Notebook Cover Card */}
+                {/* Document Card: Clean Document Sheet Layout (NOT a fake notebook) */}
                 <div
                   onClick={() => onOpenNotebook(nb.id)}
-                  className="relative w-full aspect-[3/4] max-w-[160px] rounded-xl overflow-hidden shadow-xl p-3 flex flex-col justify-between transition-transform duration-200 group-hover:scale-105"
-                  style={{
-                    background: `linear-gradient(135deg, ${nb.coverColor || '#2563eb'} 0%, #0f172a 100%)`
-                  }}
+                  className="relative w-full aspect-[3/4] max-w-[160px] rounded-2xl bg-[#ffffff] p-3 flex flex-col justify-between shadow-xl transition-transform duration-200 group-hover:scale-105 border border-slate-200/20 overflow-hidden"
                 >
-                  {/* Left Spine */}
-                  <div className="absolute left-0 top-0 bottom-0 w-3 bg-black/30 border-r border-white/10" />
+                  {/* Subtle Top corner fold */}
+                  <div className="absolute top-0 right-0 w-6 h-6 bg-[#f1f5f9] rounded-bl-xl shadow-inner border-b border-l border-slate-300" />
 
-                  {/* Top Favorite star */}
-                  <div className="flex justify-end z-10">
+                  {/* Header chip */}
+                  <div className="flex items-center justify-between z-10">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <FileText className="w-2.5 h-2.5" /> DOC
+                    </span>
+
                     <button
                       type="button"
                       onClick={(e) => {
                         e.stopPropagation();
                         onToggleFavorite(nb.id);
                       }}
-                      className="p-1 rounded-full bg-black/30 backdrop-blur-sm text-white"
+                      className="p-1 rounded-full text-slate-400 hover:text-amber-500 transition-colors"
                     >
                       <Star
-                        className={`w-3.5 h-3.5 ${nb.isFavorite ? 'fill-amber-400 text-amber-400' : 'text-white/60'}`}
+                        className={`w-3.5 h-3.5 ${nb.isFavorite ? 'fill-amber-400 text-amber-400' : ''}`}
                       />
                     </button>
                   </div>
 
-                  {/* Page Preview Thumbnail */}
-                  {firstPage?.backgroundImageData ? (
-                    <div className="absolute inset-x-5 inset-y-10 bg-white rounded shadow-md overflow-hidden opacity-95">
-                      <img
-                        src={firstPage.backgroundImageData}
-                        alt="Anteprima"
-                        className="w-full h-full object-cover"
+                  {/* Document preview snippet */}
+                  <div className="my-auto text-left text-[10px] text-slate-700 leading-relaxed font-sans line-clamp-6 opacity-85 px-1">
+                    {firstPage?.contentHtml ? (
+                      <div
+                        dangerouslySetInnerHTML={{
+                          __html: firstPage.contentHtml.replace(/<[^>]*>?/gm, '').slice(0, 140) + '...'
+                        }}
                       />
-                    </div>
-                  ) : (
-                    <div className="absolute inset-x-5 inset-y-10 bg-slate-900/60 backdrop-blur-sm border border-white/10 rounded-lg p-2 flex flex-col justify-center text-center opacity-85">
-                      <span className="text-[10px] font-mono text-white/50">
-                        {nb.pages.length} {nb.pages.length === 1 ? 'pag' : 'pag'}
-                      </span>
-                    </div>
-                  )}
+                    ) : (
+                      <p className="text-slate-400 italic">Documento vuoto</p>
+                    )}
+                  </div>
 
-                  {/* Title on bottom cover */}
-                  <div className="z-10 pl-2">
-                    <h4 className="text-xs font-bold text-white drop-shadow truncate">
-                      {nb.title}
-                    </h4>
+                  {/* Bottom page count */}
+                  <div className="z-10 pt-1 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                    <span>{nb.pages.length} {nb.pages.length === 1 ? 'pag' : 'pag'}</span>
                   </div>
                 </div>
 
-                {/* Title under card with dropdown option */}
+                {/* Title under card */}
                 <div className="mt-2.5 flex items-center justify-between w-full max-w-[160px] px-1">
                   <div
                     onClick={() => onOpenNotebook(nb.id)}
@@ -382,62 +441,20 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                     </span>
                   </div>
 
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setActiveMenuNotebookId(isMenuOpen ? null : nb.id)}
-                      className="p-1 text-slate-400 hover:text-white rounded"
-                    >
-                      <MoreVertical className="w-3.5 h-3.5" />
-                    </button>
-
-                    {isMenuOpen && (
-                      <div className="absolute right-0 bottom-full mb-1 w-44 bg-[#1b1e28] border border-slate-700 rounded-xl shadow-2xl p-1 z-50 flex flex-col gap-0.5 text-xs">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveMenuNotebookId(null);
-                            onExportPdfDirect(nb);
-                          }}
-                          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-200 hover:bg-slate-700 text-left"
-                        >
-                          <FileDown className="w-3.5 h-3.5 text-blue-400" /> Esporta PDF
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveMenuNotebookId(null);
-                            onDuplicateNotebook(nb.id);
-                          }}
-                          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-200 hover:bg-slate-700 text-left"
-                        >
-                          <Copy className="w-3.5 h-3.5 text-emerald-400" /> Duplica
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveMenuNotebookId(null);
-                            setMoveModalNotebookId(nb.id);
-                          }}
-                          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-200 hover:bg-slate-700 text-left"
-                        >
-                          <FolderInput className="w-3.5 h-3.5 text-amber-400" /> Sposta in cartella
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setActiveMenuNotebookId(null);
-                            if (confirm(`Eliminare "${nb.title}"?`)) {
-                              onDeleteNotebook(nb.id);
-                            }
-                          }}
-                          className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-rose-400 hover:bg-rose-500/20 text-left"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" /> Elimina
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setContextMenu({
+                        x: e.clientX,
+                        y: e.clientY,
+                        notebook: nb
+                      });
+                    }}
+                    className="p-1 text-slate-400 hover:text-white rounded"
+                  >
+                    <MoreVertical className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               </div>
             );
@@ -445,30 +462,132 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
         </div>
       </main>
 
-      {/* Bottom Banner (styled after screenshot 2 footer) */}
-      <footer className="fixed bottom-0 left-0 right-0 lg:left-64 bg-[#14161d] border-t border-[#1e2129] px-6 py-3 flex items-center justify-between z-20">
-        <div className="flex items-center gap-3">
-          <div className="w-6 h-6 rounded-lg bg-blue-500/10 text-blue-400 flex items-center justify-center shrink-0">
-            <Cloud className="w-4 h-4" />
-          </div>
-          <span className="text-xs text-slate-300">
-            Supporto Apple Pencil attivo • Tap con 2 dita per Annulla • Sincronizzazione Google Drive disponibile.
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={onOpenSyncModal}
-          className="px-4 py-1.5 bg-[#0a84ff] hover:bg-[#0071e3] text-white text-xs font-semibold rounded-lg shadow-md transition-all shrink-0"
+      {/* iPad-Style Long-Press / Right-Click Floating Context Menu Popover */}
+      {contextMenu && (
+        <div
+          className="fixed inset-0 z-50 bg-black/30 backdrop-blur-[2px]"
+          onClick={() => setContextMenu(null)}
         >
-          Memoria Cloud
-        </button>
-      </footer>
+          <div
+            style={{
+              position: 'fixed',
+              left: `${Math.min(window.innerWidth - 220, Math.max(10, contextMenu.x - 100))}px`,
+              top: `${Math.min(window.innerHeight - 240, Math.max(10, contextMenu.y - 20))}px`,
+            }}
+            onClick={(e) => e.stopPropagation()}
+            className="w-52 bg-[#1b1d26]/95 backdrop-blur-xl border border-slate-700/80 rounded-2xl shadow-2xl p-1.5 flex flex-col gap-0.5 text-xs text-slate-200 animate-in fade-in zoom-in-95 duration-150"
+          >
+            {contextMenu.notebook && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = contextMenu.notebook!.id;
+                    setContextMenu(null);
+                    onOpenNotebook(id);
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-blue-600 hover:text-white text-left font-medium transition-colors"
+                >
+                  <Edit2 className="w-4 h-4 text-blue-400" />
+                  <span>Apri & Modifica</span>
+                </button>
 
-      {/* Move to folder modal */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = contextMenu.notebook!.id;
+                    setContextMenu(null);
+                    setMoveModalNotebookId(id);
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-700 text-left font-medium transition-colors"
+                >
+                  <FolderInput className="w-4 h-4 text-amber-400" />
+                  <span>Sposta in cartella...</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = contextMenu.notebook!.id;
+                    setContextMenu(null);
+                    onToggleFavorite(id);
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-700 text-left font-medium transition-colors"
+                >
+                  <Star className="w-4 h-4 text-amber-400" />
+                  <span>{contextMenu.notebook.isFavorite ? 'Rimuovi dai Preferiti' : 'Aggiungi ai Preferiti'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = contextMenu.notebook!.id;
+                    setContextMenu(null);
+                    onDuplicateNotebook(id);
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-700 text-left font-medium transition-colors"
+                >
+                  <Copy className="w-4 h-4 text-emerald-400" />
+                  <span>Duplica</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nb = contextMenu.notebook!;
+                    setContextMenu(null);
+                    onExportPdfDirect(nb);
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-700 text-left font-medium transition-colors"
+                >
+                  <FileDown className="w-4 h-4 text-blue-400" />
+                  <span>Esporta in PDF</span>
+                </button>
+
+                <div className="h-[1px] bg-slate-700/60 my-1" />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const id = contextMenu.notebook!.id;
+                    setContextMenu(null);
+                    if (confirm(`Eliminare "${contextMenu.notebook!.title}"?`)) {
+                      onDeleteNotebook(id);
+                    }
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-rose-500/20 text-rose-400 text-left font-medium transition-colors"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Elimina</span>
+                </button>
+              </>
+            )}
+
+            {contextMenu.folder && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const folderId = contextMenu.folder!.id;
+                    setContextMenu(null);
+                    onSelectFolder(folderId);
+                  }}
+                  className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-blue-600 hover:text-white text-left font-medium transition-colors"
+                >
+                  <FolderInput className="w-4 h-4 text-blue-400" />
+                  <span>Apri Cartella</span>
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Move to Folder Modal */}
       {moveModalNotebookId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-2xl">
-            <h3 className="text-sm font-semibold text-white mb-3">Sposta in cartella</h3>
+          <div className="w-full max-w-sm bg-[#161822] border border-slate-700 rounded-3xl p-5 shadow-2xl">
+            <h3 className="text-sm font-bold text-white mb-3">Sposta Documento in:</h3>
             <div className="flex flex-col gap-1.5 max-h-60 overflow-y-auto">
               <button
                 type="button"
@@ -476,9 +595,9 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                   onMoveNotebook(moveModalNotebookId, null);
                   setMoveModalNotebookId(null);
                 }}
-                className="px-3 py-2 text-xs rounded-xl text-left bg-slate-800 hover:bg-slate-700 text-slate-200"
+                className="px-3.5 py-2.5 text-xs rounded-xl text-left bg-slate-800/80 hover:bg-slate-700 text-slate-200 transition-colors font-medium"
               >
-                Nessuna cartella (Principale)
+                📁 Principale (Tutti i documenti)
               </button>
               {folders.map((f) => (
                 <button
@@ -488,9 +607,9 @@ export const NotebookGrid: React.FC<NotebookGridProps> = ({
                     onMoveNotebook(moveModalNotebookId, f.id);
                     setMoveModalNotebookId(null);
                   }}
-                  className="px-3 py-2 text-xs rounded-xl text-left bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center gap-2"
+                  className="px-3.5 py-2.5 text-xs rounded-xl text-left bg-slate-800/80 hover:bg-slate-700 text-slate-200 flex items-center gap-2.5 transition-colors font-medium"
                 >
-                  <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: f.color }} />
+                  <div className="w-3 h-3 rounded-full" style={{ backgroundColor: f.color }} />
                   <span>{f.name}</span>
                 </button>
               ))}
