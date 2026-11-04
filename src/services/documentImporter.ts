@@ -70,7 +70,8 @@ export async function importPdf(file: File | Blob, originalFileName: string): Pr
         width: viewport.width,
         height: viewport.height,
         strokes: [],
-        textBlocks: []
+        images: [],
+        contentHtml: ''
       });
     }
   }
@@ -119,19 +120,8 @@ export async function importPagesFile(file: File): Promise<ImportResult> {
       width: 820,
       height: 1160,
       strokes: [],
-      textBlocks: [
-        {
-          id: `tb-pages-note`,
-          x: 60,
-          y: 40,
-          width: 700,
-          height: 60,
-          text: `Anteprima estratta da ${file.name}. Per qualità vettoriale perfetta con tutte le pagine, aprilo su Pages e tocca Esporta > PDF.`,
-          fontSize: 14,
-          color: '#475569',
-          fontFamily: 'system-ui'
-        }
-      ]
+      images: [],
+      contentHtml: `<p style="color: #64748b; font-style: italic;">Anteprima estratta da ${file.name}. Per qualità vettoriale perfetta con tutte le pagine, aprilo su Pages e tocca Esporta > PDF.</p>`
     };
 
     return {
@@ -150,96 +140,27 @@ export async function importPagesFile(file: File): Promise<ImportResult> {
 
 /**
  * Import a Word document (.docx)
+ * Converts directly into clean Word-style blank pages with rich HTML formatting!
  */
 export async function importWordDocx(file: File): Promise<ImportResult> {
   const arrayBuffer = await file.arrayBuffer();
   const conversionResult = await mammoth.convertToHtml({ arrayBuffer });
   const htmlContent = conversionResult.value;
 
-  const tempDiv = document.createElement('div');
-  tempDiv.innerHTML = htmlContent;
-  const elements = Array.from(tempDiv.children);
-
-  const pages: Page[] = [];
-  const pageWidth = 820;
-  const pageHeight = 1160;
-  const maxContentHeightPerPage = 980;
-
-  let currentPageBlocks: any[] = [];
-  let currentY = 80;
-  let pageNum = 1;
-
-  for (const el of elements) {
-    const text = el.textContent?.trim();
-    if (!text) continue;
-
-    const isHeading1 = el.tagName === 'H1';
-    const isHeading2 = el.tagName === 'H2';
-    const isHeading3 = el.tagName === 'H3';
-
-    let fontSize = 16;
-    let color = '#1e293b';
-    let blockHeight = Math.max(30, Math.ceil(text.length / 55) * 26);
-
-    if (isHeading1) {
-      fontSize = 28;
-      color = '#0f172a';
-      blockHeight = 50;
-    } else if (isHeading2) {
-      fontSize = 22;
-      color = '#1e293b';
-      blockHeight = 40;
-    } else if (isHeading3) {
-      fontSize = 18;
-      color = '#334155';
-      blockHeight = 34;
-    }
-
-    if (currentY + blockHeight > maxContentHeightPerPage && currentPageBlocks.length > 0) {
-      pages.push({
-        id: `docx-page-${Date.now()}-${pageNum}`,
-        pageNumber: pageNum,
-        backgroundType: 'word',
-        width: pageWidth,
-        height: pageHeight,
-        strokes: [],
-        textBlocks: [...currentPageBlocks]
-      });
-      pageNum++;
-      currentPageBlocks = [];
-      currentY = 80;
-    }
-
-    currentPageBlocks.push({
-      id: `docx-tb-${Date.now()}-${Math.random()}`,
-      x: 70,
-      y: currentY,
-      width: 680,
-      height: blockHeight,
-      text: text,
-      fontSize: fontSize,
-      color: color,
-      fontFamily: 'system-ui'
-    });
-
-    currentY += blockHeight + 16;
-  }
-
-  if (currentPageBlocks.length > 0 || pages.length === 0) {
-    pages.push({
-      id: `docx-page-${Date.now()}-${pageNum}`,
-      pageNumber: pageNum,
-      backgroundType: 'word',
-      width: pageWidth,
-      height: pageHeight,
-      strokes: [],
-      textBlocks: currentPageBlocks
-    });
-  }
+  const page: Page = {
+    id: `docx-page-${Date.now()}-1`,
+    pageNumber: 1,
+    backgroundType: 'word',
+    width: 820,
+    height: 1160,
+    strokes: [],
+    images: [],
+    contentHtml: htmlContent || '<p>Documento Word vuoto</p>'
+  };
 
   return {
     title: file.name.replace(/\.docx$/i, ''),
-    pages,
+    pages: [page],
     sourceType: 'docx'
   };
 }
@@ -271,7 +192,8 @@ export async function importImage(file: File): Promise<ImportResult> {
           width: width || 820,
           height: height || 1160,
           strokes: [],
-          textBlocks: []
+          images: [],
+          contentHtml: ''
         };
 
         resolve({

@@ -1,25 +1,28 @@
 import React, { useState } from 'react';
 import {
+  Bold,
+  Italic,
+  Underline,
+  Strikethrough,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  List,
+  ListOrdered,
   Pen,
   Highlighter,
   Eraser,
-  Type,
-  Square,
-  Circle,
-  Minus,
   Undo2,
   Redo2,
-  Plus,
-  ChevronLeft,
-  ChevronRight,
+  Image as ImageIcon,
+  ChevronDown,
+  Grid3X3,
   FileDown,
   ArrowLeft,
-  Grid3X3,
-  List,
-  Sparkles,
-  Palette,
   ShieldCheck,
-  Hand
+  Hand,
+  Plus,
+  Palette
 } from 'lucide-react';
 import type { ToolType, PaperTemplate } from '../types';
 
@@ -46,28 +49,25 @@ interface ToolbarProps {
   onNextPage: () => void;
   onAddPage: () => void;
   onChangePaperTemplate: (template: PaperTemplate) => void;
+  onInsertImage: (file: File) => void;
   onExportPdf: () => void;
   onBackToLibrary: () => void;
+  // Word text formatting commands
+  onExecTextCommand: (command: string, value?: string) => void;
+  currentFontSizePx: number;
+  onChangeFontSizePx: (sizePx: number) => void;
 }
 
-const PRESET_COLORS = [
-  '#0f172a', // Nero Apple
-  '#2563eb', // Blu elettrico
-  '#dc2626', // Rosso rubino
-  '#16a34a', // Verde bosco
-  '#9333ea', // Viola
-  '#ea580c', // Arancione
-  '#facc15', // Giallo evidenziatore
-  '#ec4899', // Rosa acceso
-  '#06b6d4', // Ciano
-  '#64748b', // Grigio grafite
-];
+const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 40];
 
-const STROKE_SIZES = [
-  { label: 'Fine', value: 2 },
-  { label: 'Medio', value: 5 },
-  { label: 'Spesso', value: 10 },
-  { label: 'Maxi', value: 18 },
+const FORMAL_TEXT_COLORS = [
+  '#0f172a', // Nero Grafite
+  '#334155', // Ardesia Scuro
+  '#1e40af', // Blu Notte Istituzionale
+  '#166534', // Verde Bosco Formale
+  '#991b1b', // Rosso Scuro
+  '#854d0e', // Ambra / Cuoio
+  '#475569', // Grigio Medio
 ];
 
 export const Toolbar: React.FC<ToolbarProps> = ({
@@ -93,14 +93,20 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onNextPage,
   onAddPage,
   onChangePaperTemplate,
+  onInsertImage,
   onExportPdf,
   onBackToLibrary,
+  onExecTextCommand,
+  currentFontSizePx,
+  onChangeFontSizePx,
 }) => {
+  const [activeTab, setActiveTab] = useState<'text' | 'pencil'>('text');
+  const [showTemplateMenu, setShowTemplateMenu] = useState(false);
   const [showColorPicker, setShowColorPicker] = useState(false);
-  const [showTemplatePicker, setShowTemplatePicker] = useState(false);
-  const [showShapesMenu, setShowShapesMenu] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [tempTitle, setTempTitle] = useState(title);
+
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const handleTitleSubmit = () => {
     if (tempTitle.trim()) {
@@ -109,326 +115,462 @@ export const Toolbar: React.FC<ToolbarProps> = ({
     setIsEditingTitle(false);
   };
 
-  const isShapeTool = ['line', 'rect', 'circle'].includes(activeTool);
+  const handleImageFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      onInsertImage(e.target.files[0]);
+    }
+  };
 
   return (
-    <header className="sticky top-0 z-40 w-full bg-slate-900/95 backdrop-blur-md border-b border-slate-800 text-slate-100 px-3 py-2 flex flex-wrap items-center justify-between gap-2 shadow-lg">
-      {/* 1. Left Section: Back button, Title, Templates */}
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onBackToLibrary}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 rounded-lg text-sm font-medium transition-all"
-          title="Torna alle cartelle"
-        >
-          <ArrowLeft className="w-4 h-4 text-indigo-400" />
-          <span className="hidden sm:inline">Libreria</span>
-        </button>
-
-        {/* Notebook Title editable */}
-        {isEditingTitle ? (
-          <input
-            type="text"
-            value={tempTitle}
-            onChange={(e) => setTempTitle(e.target.value)}
-            onBlur={handleTitleSubmit}
-            onKeyDown={(e) => e.key === 'Enter' && handleTitleSubmit()}
-            autoFocus
-            className="px-2 py-1 text-sm bg-slate-800 border border-indigo-500 rounded text-white focus:outline-none max-w-[200px]"
-          />
-        ) : (
+    <header className="sticky top-0 z-40 w-full bg-[#16171d] border-b border-[#262833] text-slate-200 select-none shadow-md">
+      {/* 1. Top Bar: Back, Document Title, View Mode Switcher, Actions */}
+      <div className="px-4 py-2 flex items-center justify-between border-b border-[#232530] text-xs">
+        <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={() => {
-              setTempTitle(title);
-              setIsEditingTitle(true);
-            }}
-            className="text-sm font-semibold text-white hover:text-indigo-300 max-w-[180px] md:max-w-[280px] truncate text-left px-2 py-1 rounded hover:bg-slate-800/60"
-            title="Tocca per rinominare"
+            onClick={onBackToLibrary}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#20222a] hover:bg-[#2b2d38] text-slate-300 rounded-lg font-medium transition-colors"
           >
-            {title}
+            <ArrowLeft className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">Documenti</span>
           </button>
+
+          {/* Editable Document Title */}
+          {isEditingTitle ? (
+            <input
+              type="text"
+              autoFocus
+              value={tempTitle}
+              onChange={(e) => setTempTitle(e.target.value)}
+              onBlur={handleTitleSubmit}
+              onKeyDown={(e) => e.key === 'Enter' && handleTitleSubmit()}
+              className="px-2.5 py-1 bg-[#20222a] border border-blue-500 rounded-lg text-white font-semibold text-xs focus:outline-none"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                setTempTitle(title);
+                setIsEditingTitle(true);
+              }}
+              className="font-semibold text-white hover:text-blue-400 px-2 py-1 rounded-md hover:bg-[#20222a] transition-colors truncate max-w-[200px] sm:max-w-[320px] text-left"
+              title="Rinomina documento"
+            >
+              {title}
+            </button>
+          )}
+
+          {/* Segmented Mode: Word Formatting vs Apple Pencil */}
+          <div className="flex items-center bg-[#0e0f13] p-0.5 rounded-xl border border-[#262833]">
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('text');
+                onSelectTool('text');
+              }}
+              className={`px-3 py-1 rounded-lg font-medium transition-all ${
+                activeTab === 'text'
+                  ? 'bg-[#252834] text-white shadow-sm font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Testo & Word
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('pencil');
+                if (activeTool === 'text') onSelectTool('pen');
+              }}
+              className={`px-3 py-1 rounded-lg font-medium transition-all ${
+                activeTab === 'pencil'
+                  ? 'bg-[#252834] text-white shadow-sm font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              Apple Pencil
+            </button>
+          </div>
+        </div>
+
+        {/* Right Top Actions */}
+        <div className="flex items-center gap-2">
+          {/* Paper Template Selector */}
+          <div className="relative">
+            <button
+              type="button"
+              onClick={() => setShowTemplateMenu(!showTemplateMenu)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#20222a] hover:bg-[#2b2d38] text-slate-300 rounded-lg transition-colors"
+            >
+              <Grid3X3 className="w-3.5 h-3.5 text-blue-400" />
+              <span className="hidden md:inline capitalize">
+                {paperTemplate === 'blank' ? 'Bianco (Word)' : paperTemplate === 'ruled' ? 'A Righe' : paperTemplate === 'grid' ? 'A Quadretti' : 'Puntini'}
+              </span>
+              <ChevronDown className="w-3 h-3 text-slate-400" />
+            </button>
+
+            {showTemplateMenu && (
+              <div className="absolute right-0 top-full mt-1.5 w-44 bg-[#1e2029] border border-[#2d303e] rounded-xl shadow-2xl p-1 z-50 flex flex-col gap-0.5">
+                <button
+                  type="button"
+                  onClick={() => { onChangePaperTemplate('blank'); setShowTemplateMenu(false); }}
+                  className={`px-3 py-1.5 rounded-lg text-left ${paperTemplate === 'blank' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-[#282b37]'}`}
+                >
+                  Bianco (Standard Word)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { onChangePaperTemplate('ruled'); setShowTemplateMenu(false); }}
+                  className={`px-3 py-1.5 rounded-lg text-left ${paperTemplate === 'ruled' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-[#282b37]'}`}
+                >
+                  A Righe
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { onChangePaperTemplate('grid'); setShowTemplateMenu(false); }}
+                  className={`px-3 py-1.5 rounded-lg text-left ${paperTemplate === 'grid' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-[#282b37]'}`}
+                >
+                  A Quadretti
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { onChangePaperTemplate('dots'); setShowTemplateMenu(false); }}
+                  className={`px-3 py-1.5 rounded-lg text-left ${paperTemplate === 'dots' ? 'bg-blue-600 text-white font-semibold' : 'text-slate-300 hover:bg-[#282b37]'}`}
+                >
+                  A Puntini
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Page Counter & Add Page */}
+          <div className="flex items-center bg-[#20222a] rounded-lg px-2 py-1 gap-1.5 text-xs text-slate-300">
+            <button
+              type="button"
+              onClick={onPrevPage}
+              disabled={currentPageIndex <= 0}
+              className="hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              ◀
+            </button>
+            <span className="font-mono text-xs font-semibold">
+              {currentPageIndex + 1}/{totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={onNextPage}
+              disabled={currentPageIndex >= totalPages - 1}
+              className="hover:text-white disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              ▶
+            </button>
+            <button
+              type="button"
+              onClick={onAddPage}
+              className="p-1 text-blue-400 hover:text-blue-300 font-semibold"
+              title="Aggiungi pagina"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Export PDF */}
+          <button
+            type="button"
+            onClick={onExportPdf}
+            disabled={isExportingPdf}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-[#0a84ff] hover:bg-[#0071e3] text-white rounded-lg font-semibold transition-all shadow-sm"
+          >
+            <FileDown className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{isExportingPdf ? 'Esporto...' : 'Esporta PDF'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 2. Word-Style Ribbon Toolbar */}
+      <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-3 bg-[#13141a]">
+        {activeTab === 'text' ? (
+          /* WORD RICH TEXT FORMATTING CONTROLS */
+          <div className="flex items-center flex-wrap gap-2 text-xs">
+            {/* Font Family */}
+            <select
+              onChange={(e) => onExecTextCommand('fontName', e.target.value)}
+              defaultValue="system-ui"
+              className="px-2.5 py-1 bg-[#1e2029] border border-[#2d303e] rounded-lg text-slate-200 text-xs focus:outline-none"
+            >
+              <option value="system-ui">San Francisco (Predefinito)</option>
+              <option value="Georgia, serif">Georgia (Elegante Classico)</option>
+              <option value="'Times New Roman', serif">Times New Roman (Formale)</option>
+              <option value="'Courier New', monospace">Courier (Monospace)</option>
+            </select>
+
+            {/* Font Size in PX */}
+            <div className="flex items-center gap-1 bg-[#1e2029] border border-[#2d303e] rounded-lg px-2 py-0.5">
+              <span className="text-[11px] text-slate-400">Dimensione:</span>
+              <select
+                value={currentFontSizePx}
+                onChange={(e) => onChangeFontSizePx(Number(e.target.value))}
+                className="bg-transparent text-white font-semibold text-xs focus:outline-none cursor-pointer"
+              >
+                {FONT_SIZES.map((sz) => (
+                  <option key={sz} value={sz} className="bg-[#1e2029] text-white">
+                    {sz} px
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="h-4 w-[1px] bg-[#282b36] mx-1" />
+
+            {/* B, I, U, S */}
+            <div className="flex items-center bg-[#1e2029] rounded-lg p-0.5 border border-[#2d303e]">
+              <button
+                type="button"
+                onClick={() => onExecTextCommand('bold')}
+                className="px-2 py-1 rounded hover:bg-[#2a2d3b] text-white font-bold"
+                title="Grassetto (Cmd+B)"
+              >
+                <Bold className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onExecTextCommand('italic')}
+                className="px-2 py-1 rounded hover:bg-[#2a2d3b] text-white italic"
+                title="Corsivo (Cmd+I)"
+              >
+                <Italic className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onExecTextCommand('underline')}
+                className="px-2 py-1 rounded hover:bg-[#2a2d3b] text-white underline"
+                title="Sottolineato (Cmd+U)"
+              >
+                <Underline className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onExecTextCommand('strikeThrough')}
+                className="px-2 py-1 rounded hover:bg-[#2a2d3b] text-white line-through"
+                title="Barrato"
+              >
+                <Strikethrough className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="h-4 w-[1px] bg-[#282b36] mx-1" />
+
+            {/* Alignment */}
+            <div className="flex items-center bg-[#1e2029] rounded-lg p-0.5 border border-[#2d303e]">
+              <button
+                type="button"
+                onClick={() => onExecTextCommand('justifyLeft')}
+                className="p-1 rounded hover:bg-[#2a2d3b] text-slate-300 hover:text-white"
+                title="Allinea a sinistra"
+              >
+                <AlignLeft className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onExecTextCommand('justifyCenter')}
+                className="p-1 rounded hover:bg-[#2a2d3b] text-slate-300 hover:text-white"
+                title="Allinea al centro"
+              >
+                <AlignCenter className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onExecTextCommand('justifyRight')}
+                className="p-1 rounded hover:bg-[#2a2d3b] text-slate-300 hover:text-white"
+                title="Allinea a destra"
+              >
+                <AlignRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Bullets & Lists */}
+            <div className="flex items-center bg-[#1e2029] rounded-lg p-0.5 border border-[#2d303e]">
+              <button
+                type="button"
+                onClick={() => onExecTextCommand('insertUnorderedList')}
+                className="p-1 rounded hover:bg-[#2a2d3b] text-slate-300 hover:text-white"
+                title="Elenco puntato"
+              >
+                <List className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => onExecTextCommand('insertOrderedList')}
+                className="p-1 rounded hover:bg-[#2a2d3b] text-slate-300 hover:text-white"
+                title="Elenco numerato"
+              >
+                <ListOrdered className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Formal Text Colors */}
+            <div className="flex items-center gap-1 pl-1">
+              {FORMAL_TEXT_COLORS.map((col) => (
+                <button
+                  key={col}
+                  type="button"
+                  onClick={() => onExecTextCommand('foreColor', col)}
+                  className="w-4 h-4 rounded-full border border-slate-600 hover:scale-125 transition-transform"
+                  style={{ backgroundColor: col }}
+                  title="Colore testo"
+                />
+              ))}
+            </div>
+
+            {/* Freeform Image Inserter Button */}
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#20222a] hover:bg-[#2b2d38] text-blue-400 font-semibold rounded-lg border border-[#2d303e] transition-colors ml-2"
+              title="Inserisci foto libera e spostala ovunque sul foglio"
+            >
+              <ImageIcon className="w-3.5 h-3.5" />
+              <span>Inserisci Foto</span>
+            </button>
+            <input
+              type="file"
+              ref={fileInputRef}
+              onChange={handleImageFileChange}
+              accept="image/*"
+              className="hidden"
+            />
+          </div>
+        ) : (
+          /* APPLE PENCIL DRAWING TOOLS */
+          <div className="flex items-center flex-wrap gap-2 text-xs">
+            {/* Pen Tool */}
+            <button
+              type="button"
+              onClick={() => onSelectTool('pen')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
+                activeTool === 'pen'
+                  ? 'bg-blue-600 text-white shadow-sm'
+                  : 'bg-[#1e2029] text-slate-300 hover:bg-[#282b37]'
+              }`}
+            >
+              <Pen className="w-3.5 h-3.5" />
+              <span>Penna Fluida</span>
+            </button>
+
+            {/* Highlighter */}
+            <button
+              type="button"
+              onClick={() => onSelectTool('highlighter')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
+                activeTool === 'highlighter'
+                  ? 'bg-amber-500 text-black font-semibold shadow-sm'
+                  : 'bg-[#1e2029] text-slate-300 hover:bg-[#282b37]'
+              }`}
+            >
+              <Highlighter className="w-3.5 h-3.5" />
+              <span>Evidenziatore</span>
+            </button>
+
+            {/* Eraser */}
+            <button
+              type="button"
+              onClick={() => onSelectTool('eraser')}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
+                activeTool === 'eraser'
+                  ? 'bg-rose-600 text-white shadow-sm'
+                  : 'bg-[#1e2029] text-slate-300 hover:bg-[#282b37]'
+              }`}
+            >
+              <Eraser className="w-3.5 h-3.5" />
+              <span>Gomma a Tratto</span>
+            </button>
+
+            <div className="h-4 w-[1px] bg-[#282b36] mx-1" />
+
+            {/* Color Palette */}
+            <div className="relative flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setShowColorPicker(!showColorPicker)}
+                className="w-5 h-5 rounded-full border border-white/40 shadow-sm flex items-center justify-center"
+                style={{ backgroundColor: strokeColor }}
+                title="Colore inchiostro"
+              >
+                <Palette className="w-2.5 h-2.5 text-white drop-shadow" />
+              </button>
+
+              {showColorPicker && (
+                <div className="absolute top-full mt-2 left-0 bg-[#1e2029] border border-[#2d303e] rounded-xl shadow-2xl p-2 z-50 flex gap-1.5">
+                  {['#0f172a', '#2563eb', '#dc2626', '#16a34a', '#d97706', '#9333ea'].map((c) => (
+                    <button
+                      key={c}
+                      type="button"
+                      onClick={() => {
+                        onChangeColor(c);
+                        setShowColorPicker(false);
+                      }}
+                      className="w-5 h-5 rounded-full border border-slate-600 hover:scale-125 transition-transform"
+                      style={{ backgroundColor: c }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Stroke Thickness */}
+            <div className="flex items-center gap-1 bg-[#1e2029] rounded-lg p-1 border border-[#2d303e]">
+              {[2, 5, 9].map((sz) => (
+                <button
+                  key={sz}
+                  type="button"
+                  onClick={() => onChangeSize(sz)}
+                  className={`w-5 h-5 rounded flex items-center justify-center ${
+                    strokeSize === sz ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                  }`}
+                  title={`Spessore ${sz}px`}
+                >
+                  <div
+                    className="rounded-full bg-current"
+                    style={{ width: `${sz + 2}px`, height: `${sz + 2}px` }}
+                  />
+                </button>
+              ))}
+            </div>
+
+            {/* Palm Rejection Toggle */}
+            <button
+              type="button"
+              onClick={onToggleApplePencilOnly}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ml-1 ${
+                applePencilOnly
+                  ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/40'
+                  : 'bg-[#1e2029] text-slate-400 hover:text-slate-200'
+              }`}
+              title="Solo Apple Pencil: appoggia il palmo senza disegnare con le dita"
+            >
+              {applePencilOnly ? (
+                <>
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Palm Rejection Attiva</span>
+                </>
+              ) : (
+                <>
+                  <Hand className="w-3.5 h-3.5" />
+                  <span>Dita + Pencil</span>
+                </>
+              )}
+            </button>
+          </div>
         )}
 
-        {/* Paper Template Selector */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => setShowTemplatePicker(!showTemplatePicker)}
-            className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs flex items-center gap-1"
-            title="Cambia motivo carta"
-          >
-            <Grid3X3 className="w-4 h-4 text-indigo-400" />
-            <span className="hidden md:inline capitalize">{paperTemplate}</span>
-          </button>
-
-          {showTemplatePicker && (
-            <div className="absolute left-0 top-full mt-2 w-48 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-2 z-50 flex flex-col gap-1 text-xs">
-              <span className="px-2 py-1 text-slate-400 font-semibold uppercase text-[10px]">Stile Carta Chiara</span>
-              <button
-                type="button"
-                onClick={() => { onChangePaperTemplate('ruled'); setShowTemplatePicker(false); }}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-left ${paperTemplate === 'ruled' ? 'bg-indigo-600 text-white' : 'text-slate-200 hover:bg-slate-700'}`}
-              >
-                <List className="w-3.5 h-3.5" /> A Righe
-              </button>
-              <button
-                type="button"
-                onClick={() => { onChangePaperTemplate('grid'); setShowTemplatePicker(false); }}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-left ${paperTemplate === 'grid' ? 'bg-indigo-600 text-white' : 'text-slate-200 hover:bg-slate-700'}`}
-              >
-                <Grid3X3 className="w-3.5 h-3.5" /> A Quadretti
-              </button>
-              <button
-                type="button"
-                onClick={() => { onChangePaperTemplate('dots'); setShowTemplatePicker(false); }}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-left ${paperTemplate === 'dots' ? 'bg-indigo-600 text-white' : 'text-slate-200 hover:bg-slate-700'}`}
-              >
-                <Sparkles className="w-3.5 h-3.5" /> A Puntini
-              </button>
-              <button
-                type="button"
-                onClick={() => { onChangePaperTemplate('blank'); setShowTemplatePicker(false); }}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-left ${paperTemplate === 'blank' ? 'bg-indigo-600 text-white' : 'text-slate-200 hover:bg-slate-700'}`}
-              >
-                Bianco Liscio
-              </button>
-
-              <span className="px-2 pt-2 pb-1 text-slate-400 font-semibold uppercase text-[10px] border-t border-slate-700 mt-1">Stile Carta Scura (OLED)</span>
-              <button
-                type="button"
-                onClick={() => { onChangePaperTemplate('dark-ruled'); setShowTemplatePicker(false); }}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-left ${paperTemplate === 'dark-ruled' ? 'bg-indigo-600 text-white' : 'text-slate-200 hover:bg-slate-700'}`}
-              >
-                Dark Righe
-              </button>
-              <button
-                type="button"
-                onClick={() => { onChangePaperTemplate('dark-grid'); setShowTemplatePicker(false); }}
-                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-left ${paperTemplate === 'dark-grid' ? 'bg-indigo-600 text-white' : 'text-slate-200 hover:bg-slate-700'}`}
-              >
-                Dark Quadretti
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* 2. Center Section: Main Apple Pencil Tool Rack */}
-      <div className="flex items-center bg-slate-800/90 rounded-2xl p-1 border border-slate-700/80 shadow-inner gap-0.5 sm:gap-1">
-        {/* Pen */}
-        <button
-          type="button"
-          onClick={() => onSelectTool('pen')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-medium text-xs transition-all ${
-            activeTool === 'pen'
-              ? 'bg-indigo-600 text-white shadow-md'
-              : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-          }`}
-          title="Penna a inchiostro fluido (Apple Pencil)"
-        >
-          <Pen className="w-4 h-4" />
-          <span className="hidden md:inline">Penna</span>
-        </button>
-
-        {/* Highlighter */}
-        <button
-          type="button"
-          onClick={() => onSelectTool('highlighter')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-medium text-xs transition-all ${
-            activeTool === 'highlighter'
-              ? 'bg-yellow-500 text-slate-950 font-bold shadow-md'
-              : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-          }`}
-          title="Evidenziatore"
-        >
-          <Highlighter className="w-4 h-4" />
-          <span className="hidden md:inline">Evidenziatore</span>
-        </button>
-
-        {/* Eraser */}
-        <button
-          type="button"
-          onClick={() => onSelectTool('eraser')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-medium text-xs transition-all ${
-            activeTool === 'eraser'
-              ? 'bg-rose-600 text-white shadow-md'
-              : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-          }`}
-          title="Gomma da cancellare (cancella tratto)"
-        >
-          <Eraser className="w-4 h-4" />
-          <span className="hidden md:inline">Gomma</span>
-        </button>
-
-        {/* Text Tool for Bluetooth Keyboard */}
-        <button
-          type="button"
-          onClick={() => onSelectTool('text')}
-          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-medium text-xs transition-all ${
-            activeTool === 'text'
-              ? 'bg-cyan-600 text-white shadow-md'
-              : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-          }`}
-          title="Casella di testo (Tastiera Bluetooth)"
-        >
-          <Type className="w-4 h-4" />
-          <span className="hidden md:inline">Testo</span>
-        </button>
-
-        {/* Geometric Shapes */}
-        <div className="relative">
-          <button
-            type="button"
-            onClick={() => {
-              if (isShapeTool) {
-                setShowShapesMenu(!showShapesMenu);
-              } else {
-                onSelectTool('line');
-                setShowShapesMenu(!showShapesMenu);
-              }
-            }}
-            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs transition-all ${
-              isShapeTool
-                ? 'bg-emerald-600 text-white shadow-md'
-                : 'text-slate-300 hover:bg-slate-700 hover:text-white'
-            }`}
-            title="Forme geometriche (Linea, Rettangolo, Cerchio)"
-          >
-            {activeTool === 'rect' ? <Square className="w-4 h-4" /> : activeTool === 'circle' ? <Circle className="w-4 h-4" /> : <Minus className="w-4 h-4" />}
-            <span className="hidden md:inline">Forme</span>
-          </button>
-
-          {showShapesMenu && (
-            <div className="absolute top-full mt-2 left-0 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl p-1 z-50 flex flex-col gap-1 w-32 text-xs">
-              <button
-                type="button"
-                onClick={() => { onSelectTool('line'); setShowShapesMenu(false); }}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-200 hover:bg-slate-700"
-              >
-                <Minus className="w-4 h-4" /> Linea
-              </button>
-              <button
-                type="button"
-                onClick={() => { onSelectTool('rect'); setShowShapesMenu(false); }}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-200 hover:bg-slate-700"
-              >
-                <Square className="w-4 h-4" /> Rettangolo
-              </button>
-              <button
-                type="button"
-                onClick={() => { onSelectTool('circle'); setShowShapesMenu(false); }}
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-slate-200 hover:bg-slate-700"
-              >
-                <Circle className="w-4 h-4" /> Cerchio
-              </button>
-            </div>
-          )}
-        </div>
-
-        <div className="h-5 w-[1px] bg-slate-700 mx-1" />
-
-        {/* Color Palette & Custom Picker */}
-        <div className="relative flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => setShowColorPicker(!showColorPicker)}
-            className="w-6 h-6 rounded-full border-2 border-slate-300 shadow-sm flex items-center justify-center transition-transform hover:scale-110"
-            style={{ backgroundColor: strokeColor }}
-            title="Seleziona colore"
-          >
-            <Palette className="w-3 h-3 text-white drop-shadow" />
-          </button>
-
-          {showColorPicker && (
-            <div className="absolute top-full mt-2 left-0 bg-slate-800 border border-slate-700 rounded-2xl shadow-2xl p-3 z-50 flex flex-col gap-3 w-56">
-              <span className="text-xs font-semibold text-slate-300">Colori Rapidi</span>
-              <div className="grid grid-cols-5 gap-2">
-                {PRESET_COLORS.map((c) => (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => {
-                      onChangeColor(c);
-                      setShowColorPicker(false);
-                    }}
-                    className={`w-7 h-7 rounded-full transition-transform hover:scale-110 ${strokeColor === c ? 'ring-2 ring-indigo-400 ring-offset-2 ring-offset-slate-800' : ''}`}
-                    style={{ backgroundColor: c }}
-                  />
-                ))}
-              </div>
-              <div className="pt-2 border-t border-slate-700 flex items-center justify-between">
-                <span className="text-xs text-slate-400">Personalizzato:</span>
-                <input
-                  type="color"
-                  value={strokeColor}
-                  onChange={(e) => onChangeColor(e.target.value)}
-                  className="w-8 h-8 rounded cursor-pointer bg-transparent border-0"
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Stroke Thickness Picker */}
-        <div className="flex items-center gap-0.5 ml-1">
-          {STROKE_SIZES.map((sz) => (
-            <button
-              key={sz.value}
-              type="button"
-              onClick={() => onChangeSize(sz.value)}
-              className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all ${
-                strokeSize === sz.value ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-700 hover:text-slate-200'
-              }`}
-              title={`Spessore ${sz.label}`}
-            >
-              <div
-                className="rounded-full bg-current"
-                style={{ width: `${Math.min(14, sz.value * 2)}px`, height: `${Math.min(14, sz.value * 2)}px` }}
-              />
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 3. Right Section: Palm Rejection Toggle, Undo/Redo, Pages, Export */}
-      <div className="flex items-center gap-1.5 sm:gap-2">
-        {/* Apple Pencil Palm Rejection Button */}
-        <button
-          type="button"
-          onClick={onToggleApplePencilOnly}
-          className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-medium transition-all ${
-            applePencilOnly
-              ? 'bg-emerald-600/20 text-emerald-300 border border-emerald-500/50 shadow-sm'
-              : 'bg-slate-800 text-slate-400 hover:bg-slate-700 hover:text-slate-300'
-          }`}
-          title={
-            applePencilOnly
-              ? 'Palm Rejection ATTIVA: solo l\'Apple Pencil disegna, le dita e il palmo non lasciano segni'
-              : 'Palm Rejection disattivata: sia dita che Apple Pencil disegnano'
-          }
-        >
-          {applePencilOnly ? (
-            <>
-              <ShieldCheck className="w-4 h-4 text-emerald-400" />
-              <span className="hidden lg:inline">Solo Pencil</span>
-            </>
-          ) : (
-            <>
-              <Hand className="w-4 h-4" />
-              <span className="hidden lg:inline">Dita + Pencil</span>
-            </>
-          )}
-        </button>
-
-        {/* Undo & Redo */}
-        <div className="flex items-center bg-slate-800 rounded-lg p-0.5">
+        {/* Global Undo & Redo Shortcuts in Ribbon */}
+        <div className="flex items-center gap-1 bg-[#1e2029] rounded-lg p-0.5 border border-[#2d303e]">
           <button
             type="button"
             onClick={onUndo}
             disabled={!canUndo}
-            className={`p-1.5 rounded ${canUndo ? 'text-slate-200 hover:bg-slate-700 active:scale-95' : 'text-slate-600 cursor-not-allowed'}`}
-            title="Annulla (Ctrl+Z / Cmd+Z)"
+            className="p-1.5 rounded text-slate-300 hover:text-white hover:bg-[#282b37] disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Annulla (Tap 2 Dita o Cmd+Z)"
           >
             <Undo2 className="w-4 h-4" />
           </button>
@@ -436,58 +578,12 @@ export const Toolbar: React.FC<ToolbarProps> = ({
             type="button"
             onClick={onRedo}
             disabled={!canRedo}
-            className={`p-1.5 rounded ${canRedo ? 'text-slate-200 hover:bg-slate-700 active:scale-95' : 'text-slate-600 cursor-not-allowed'}`}
-            title="Ripristina (Ctrl+Y / Cmd+Y)"
+            className="p-1.5 rounded text-slate-300 hover:text-white hover:bg-[#282b37] disabled:opacity-30 disabled:cursor-not-allowed"
+            title="Ripristina (Tap 3 Dita o Cmd+Y)"
           >
             <Redo2 className="w-4 h-4" />
           </button>
         </div>
-
-        {/* Page Navigation & Add Page */}
-        <div className="flex items-center bg-slate-800 rounded-lg px-2 py-1 gap-1 text-xs text-slate-300">
-          <button
-            type="button"
-            onClick={onPrevPage}
-            disabled={currentPageIndex <= 0}
-            className={`p-0.5 rounded ${currentPageIndex > 0 ? 'hover:bg-slate-700 text-slate-200' : 'text-slate-600 cursor-not-allowed'}`}
-            title="Pagina precedente"
-          >
-            <ChevronLeft className="w-4 h-4" />
-          </button>
-          <span className="font-mono text-xs font-semibold">
-            {currentPageIndex + 1}/{totalPages}
-          </span>
-          <button
-            type="button"
-            onClick={onNextPage}
-            disabled={currentPageIndex >= totalPages - 1}
-            className={`p-0.5 rounded ${currentPageIndex < totalPages - 1 ? 'hover:bg-slate-700 text-slate-200' : 'text-slate-600 cursor-not-allowed'}`}
-            title="Pagina successiva"
-          >
-            <ChevronRight className="w-4 h-4" />
-          </button>
-          <button
-            type="button"
-            onClick={onAddPage}
-            className="ml-1 p-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded font-medium flex items-center gap-0.5 text-[11px]"
-            title="Aggiungi nuova pagina"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Pagina</span>
-          </button>
-        </div>
-
-        {/* Export PDF Button */}
-        <button
-          type="button"
-          onClick={onExportPdf}
-          disabled={isExportingPdf}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 active:scale-95 text-white rounded-lg text-xs font-semibold shadow-md transition-all"
-          title="Esporta taccuino completo in PDF con tutte le annotazioni"
-        >
-          <FileDown className="w-4 h-4" />
-          <span className="hidden sm:inline">{isExportingPdf ? 'Esporto...' : 'Esporta PDF'}</span>
-        </button>
       </div>
     </header>
   );

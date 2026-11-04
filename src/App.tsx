@@ -1,14 +1,14 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { db, seedInitialDataIfNeeded } from './services/db';
 import { syncService } from './services/googleDrive';
 import { exportNotebookToPdf } from './services/pdfExporter';
-import type { Folder, Notebook, Page, Stroke, ToolType, PaperTemplate, SyncStatus } from './types';
+import type { Folder, Notebook, Page, Stroke, ToolType, PaperTemplate, SyncStatus, FloatingImage } from './types';
 import type { ImportResult } from './services/documentImporter';
 
 import { Sidebar } from './components/Sidebar';
 import { NotebookGrid } from './components/NotebookGrid';
 import { Toolbar } from './components/Toolbar';
-import { CanvasPage } from './components/CanvasPage';
+import { DocumentEditor } from './components/DocumentEditor';
 import { FolderModal } from './components/FolderModal';
 import { ImportModal } from './components/ImportModal';
 import { SyncModal } from './components/SyncModal';
@@ -17,15 +17,19 @@ import { NewNotebookModal } from './components/NewNotebookModal';
 export function App() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
-  const [selectedFolderId, setSelectedFolderId] = useState<string | 'all' | 'favorites' | 'recent'>('all');
+  const [selectedFolderId, setSelectedFolderId] = useState<string | 'all' | 'favorites' | 'shared'>('all');
   const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
   const [currentPageIndex, setCurrentPageIndex] = useState<number>(0);
 
-  // Drawing Tools State
-  const [activeTool, setActiveTool] = useState<ToolType>('pen');
+  // Tools State (Default is 'text' for Word typing immediately)
+  const [activeTool, setActiveTool] = useState<ToolType>('text');
   const [strokeColor, setStrokeColor] = useState<string>('#0f172a');
   const [strokeSize, setStrokeSize] = useState<number>(5);
-  const [applePencilOnly, setApplePencilOnly] = useState<boolean>(true); // Palm Rejection enabled by default!
+  const [applePencilOnly, setApplePencilOnly] = useState<boolean>(true); // Palm Rejection enabled
+
+  // Word Typography State
+  const [currentFontSizePx, setCurrentFontSizePx] = useState<number>(16);
+  const editorRef = useRef<HTMLDivElement | null>(null);
 
   // History Stacks (Undo / Redo) for strokes
   const [undoStack, setUndoStack] = useState<Stroke[][]>([]);
@@ -87,11 +91,67 @@ export function App() {
     saveNotebook(updatedNotebook);
   }, [activeNotebook, currentPage, currentPageIndex, saveNotebook]);
 
+  // Word Rich Text formatting execution
+  const handleExecTextCommand = (command: string, value?: string) => {
+    if (activeTool !== 'text') {
+      setActiveTool('text');
+    }
+    if (editorRef.current) {
+      editorRef.current.focus();
+    }
+    document.execCommand(command, false, value);
+    if (editorRef.current && currentPage) {
+      handleUpdatePage({ contentHtml: editorRef.current.innerHTML });
+    }
+  };
+
+  // Font size in px handler
+  const handleChangeFontSizePx = (szPx: number) => {
+    setCurrentFontSizePx(szPx);
+    if (editorRef.current) {
+      editorRef.current.focus();
+    }
+    const selection = window.getSelection();
+    if (selection && selection.rangeCount > 0) {
+      const range = selection.getRangeAt(0);
+      if (!range.collapsed) {
+        const span = document.createElement('span');
+        span.style.fontSize = `${szPx}px`;
+        span.appendChild(range.extractContents());
+        range.insertNode(span);
+        if (editorRef.current && currentPage) {
+          handleUpdatePage({ contentHtml: editorRef.current.innerHTML });
+        }
+      }
+    }
+  };
+
+  // Freeform Floating Image Inserter
+  const handleInsertFloatingImage = (file: File) => {
+    if (!currentPage) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const dataUrl = e.target?.result as string;
+      const newImg: FloatingImage = {
+        id: `img-${Date.now()}`,
+        src: dataUrl,
+        x: 80,
+        y: 140,
+        width: 320,
+        height: 220
+      };
+      handleUpdatePage({
+        images: [...(currentPage.images || []), newImg]
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
   // Add Stroke with Undo History
   const handleAddStroke = useCallback((stroke: Stroke) => {
     if (!currentPage) return;
     setUndoStack((prev) => [...prev, currentPage.strokes]);
-    setRedoStack([]); // Clear redo on new action
+    setRedoStack([]);
     handleUpdatePage({
       strokes: [...currentPage.strokes, stroke]
     });
@@ -107,7 +167,7 @@ export function App() {
     });
   }, [currentPage, handleUpdatePage]);
 
-  // Undo
+  // Undo (also triggered by 2-finger tap on screen!)
   const handleUndo = useCallback(() => {
     if (undoStack.length === 0 || !currentPage) return;
     const previousStrokes = undoStack[undoStack.length - 1];
@@ -116,7 +176,7 @@ export function App() {
     handleUpdatePage({ strokes: previousStrokes });
   }, [undoStack, currentPage, handleUpdatePage]);
 
-  // Redo
+  // Redo (also triggered by 3-finger tap on screen!)
   const handleRedo = useCallback(() => {
     if (redoStack.length === 0 || !currentPage) return;
     const nextStrokes = redoStack[redoStack.length - 1];
@@ -125,12 +185,21 @@ export function App() {
     handleUpdatePage({ strokes: nextStrokes });
   }, [redoStack, currentPage, handleUpdatePage]);
 
-  // Keyboard Shortcuts (especially great for Bluetooth keyboard on iPad or PC)
+  // Keyboard Shortcuts (iPad Bluetooth keyboard or PC)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Ignore if typing inside input/textarea
-      const target = e.target as HTMLElement;
-      if (['INPUT', 'TEXTAREA'].includes(target.tagName) || target.isContentEditable) {
+      // Don't intercept normal typing inside contentEditable
+      if (document.activeElement === editorRef.current) {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'b') {
+          e.preventDefault();
+          handleExecTextCommand('bold');
+        } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'i') {
+          e.preventDefault();
+          handleExecTextCommand('italic');
+        } else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'u') {
+          e.preventDefault();
+          handleExecTextCommand('underline');
+        }
         return;
       }
 
@@ -150,8 +219,6 @@ export function App() {
         setActiveTool('highlighter');
       } else if (e.key.toLowerCase() === 'e') {
         setActiveTool('eraser');
-      } else if (e.key.toLowerCase() === 't') {
-        setActiveTool('text');
       }
     };
 
@@ -170,7 +237,8 @@ export function App() {
       width: 820,
       height: 1160,
       strokes: [],
-      textBlocks: []
+      images: [],
+      contentHtml: '<p><br></p>'
     };
     const updatedNotebook: Notebook = {
       ...activeNotebook,
@@ -181,19 +249,16 @@ export function App() {
     setCurrentPageIndex(activeNotebook.pages.length);
   };
 
-  // Change title
   const handleChangeTitle = (newTitle: string) => {
     if (!activeNotebook) return;
     saveNotebook({ ...activeNotebook, title: newTitle, updatedAt: Date.now() });
   };
 
-  // Change paper template
   const handleChangePaperTemplate = (tmpl: PaperTemplate) => {
     if (!activeNotebook) return;
     saveNotebook({ ...activeNotebook, paperTemplate: tmpl, updatedAt: Date.now() });
   };
 
-  // Export to PDF
   const handleExportPdf = async (nbToExport?: Notebook) => {
     const target = nbToExport || activeNotebook;
     if (!target) return;
@@ -207,7 +272,6 @@ export function App() {
     }
   };
 
-  // Create new folder
   const handleSaveFolder = async (name: string, color: string) => {
     const now = Date.now();
     if (folderToEdit) {
@@ -228,7 +292,6 @@ export function App() {
     refreshData();
   };
 
-  // Delete folder
   const handleDeleteFolder = async (folderId: string) => {
     await db.folders.delete(folderId);
     if (selectedFolderId === folderId) {
@@ -237,7 +300,6 @@ export function App() {
     refreshData();
   };
 
-  // Create new notebook
   const handleCreateNotebook = async (
     title: string,
     template: PaperTemplate,
@@ -251,7 +313,7 @@ export function App() {
       folderId,
       createdAt: now,
       updatedAt: now,
-      paperTemplate: template,
+      paperTemplate: template || 'blank', // BLANK Word di default
       coverColor,
       tags: [],
       pages: [
@@ -262,7 +324,8 @@ export function App() {
           width: 820,
           height: 1160,
           strokes: [],
-          textBlocks: []
+          images: [],
+          contentHtml: '<p><br></p>'
         }
       ]
     };
@@ -270,12 +333,12 @@ export function App() {
     await refreshData();
     setActiveNotebookId(newNotebook.id);
     setCurrentPageIndex(0);
+    setActiveTool('text');
   };
 
-  // Handle Document Import (PDF, Word, Pages, Images)
   const handleImportComplete = async (result: ImportResult) => {
     const now = Date.now();
-    const defaultFolder = ['all', 'favorites', 'recent'].includes(selectedFolderId) ? null : (selectedFolderId as string);
+    const defaultFolder = ['all', 'favorites', 'shared'].includes(selectedFolderId) ? null : (selectedFolderId as string);
 
     const importedNotebook: Notebook = {
       id: `imported-${now}`,
@@ -299,7 +362,6 @@ export function App() {
     }
   };
 
-  // Notebook card actions
   const handleToggleFavorite = async (notebookId: string) => {
     const nb = notebooks.find((n) => n.id === notebookId);
     if (!nb) return;
@@ -339,7 +401,6 @@ export function App() {
     refreshData();
   };
 
-  // Calculate counts per folder
   const folderCounts: { [key: string]: number } = {
     all: notebooks.length,
     favorites: notebooks.filter((n) => n.isFavorite).length
@@ -348,7 +409,6 @@ export function App() {
     folderCounts[f.id] = notebooks.filter((n) => n.folderId === f.id).length;
   });
 
-  // Filter notebooks for the grid view
   const displayNotebooks = notebooks.filter((nb) => {
     if (selectedFolderId === 'all') return true;
     if (selectedFolderId === 'favorites') return !!nb.isFavorite;
@@ -358,15 +418,15 @@ export function App() {
   const currentFolder = folders.find((f) => f.id === selectedFolderId);
   const currentFolderName =
     selectedFolderId === 'all'
-      ? 'Tutti i taccuini'
+      ? 'Documenti'
       : selectedFolderId === 'favorites'
       ? 'Taccuini Preferiti'
       : currentFolder?.name || 'Cartella';
 
   return (
-    <div className="h-full w-full flex flex-col bg-slate-900 text-slate-100 overflow-hidden font-sans">
+    <div className="h-full w-full flex flex-col bg-[#0c0d10] text-slate-100 overflow-hidden font-sans select-none">
       {activeNotebook && currentPage ? (
-        /* VIEW 1: NOTEBOOK EDITOR (Goodnotes Style Digital Canvas) */
+        /* VIEW 1: WORD-STYLE DOCUMENT EDITOR WITH APPLE PENCIL */
         <div className="flex-1 flex flex-col h-full overflow-hidden">
           <Toolbar
             title={activeNotebook.title}
@@ -391,13 +451,17 @@ export function App() {
             onNextPage={() => setCurrentPageIndex((prev) => Math.min(activeNotebook.pages.length - 1, prev + 1))}
             onAddPage={handleAddPage}
             onChangePaperTemplate={handleChangePaperTemplate}
+            onInsertImage={handleInsertFloatingImage}
             onExportPdf={() => handleExportPdf()}
             onBackToLibrary={() => setActiveNotebookId(null)}
+            onExecTextCommand={handleExecTextCommand}
+            currentFontSizePx={currentFontSizePx}
+            onChangeFontSizePx={handleChangeFontSizePx}
           />
 
-          {/* Canvas Scrollable Workspace */}
-          <div className="flex-1 overflow-auto bg-[#0a0b0e] p-4 sm:p-8 flex items-start justify-center">
-            <CanvasPage
+          {/* Document Centered Workspace */}
+          <div className="flex-1 overflow-auto bg-[#0a0b0e] p-4 sm:p-10 flex items-start justify-center">
+            <DocumentEditor
               key={currentPage.id}
               page={currentPage}
               paperTemplate={activeNotebook.paperTemplate}
@@ -412,11 +476,12 @@ export function App() {
               onRedo={handleRedo}
               canUndo={undoStack.length > 0}
               canRedo={redoStack.length > 0}
+              editorRef={editorRef}
             />
           </div>
         </div>
       ) : (
-        /* VIEW 2: LIBRARY & FOLDERS VIEW */
+        /* VIEW 2: LIBRARY & FOLDERS (GOODNOTES FORMAL AESTHETIC) */
         <div className="flex-1 flex h-full overflow-hidden">
           <Sidebar
             folders={folders}
@@ -449,6 +514,7 @@ export function App() {
               setCurrentPageIndex(0);
               setUndoStack([]);
               setRedoStack([]);
+              setActiveTool('text');
             }}
             onCreateNotebook={() => setIsNewNotebookModalOpen(true)}
             onCreateFolderClick={() => {

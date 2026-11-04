@@ -22,10 +22,10 @@ const COVER_COLORS = [
 ];
 
 const TEMPLATES: { id: PaperTemplate; name: string; icon: any }[] = [
+  { id: 'blank', name: 'Bianco (Word)', icon: Sparkles },
   { id: 'ruled', name: 'A Righe', icon: List },
   { id: 'grid', name: 'A Quadretti', icon: Grid3X3 },
   { id: 'dots', name: 'A Puntini', icon: Sparkles },
-  { id: 'blank', name: 'Bianco', icon: Sparkles },
   { id: 'dark-ruled', name: 'Dark Righe', icon: List },
   { id: 'dark-grid', name: 'Dark Quadretti', icon: Grid3X3 },
 ];
@@ -38,7 +38,7 @@ export const NewNotebookModal: React.FC<NewNotebookModalProps> = ({
   onCreate
 }) => {
   const [title, setTitle] = useState('');
-  const [template, setTemplate] = useState<PaperTemplate>('ruled');
+  const [template, setTemplate] = useState<PaperTemplate>('blank');
   const [coverColor, setCoverColor] = useState(COVER_COLORS[0]);
   const defaultFolder = ['all', 'favorites', 'recent'].includes(currentFolderId) ? null : (currentFolderId as string);
   const [selectedFolderId, setSelectedFolderId] = useState<string | null>(defaultFolder);

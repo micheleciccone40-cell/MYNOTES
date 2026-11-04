@@ -1,95 +1,135 @@
 import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import type { Notebook, Page } from '../types';
 import { drawStrokeToContext } from '../utils/drawing';
 
 /**
- * Renders a full page with background template, PDF background, strokes, and text blocks to a high-res canvas
+ * Renders a full page with background template, Word HTML text, floating images, and pencil strokes
  */
 export async function renderPageToCanvas(page: Page, paperTemplate: string): Promise<HTMLCanvasElement> {
+  // If the page has rich Word HTML content or floating images, create a temporary DOM element to render via html2canvas
+  if (page.contentHtml || (page.images && page.images.length > 0)) {
+    const tempContainer = document.createElement('div');
+    tempContainer.style.width = `${page.width}px`;
+    tempContainer.style.minHeight = `${page.height}px`;
+    tempContainer.style.position = 'fixed';
+    tempContainer.style.left = '-9999px';
+    tempContainer.style.top = '0';
+    tempContainer.style.backgroundColor = paperTemplate.startsWith('dark') ? '#1e293b' : '#ffffff';
+    tempContainer.style.color = paperTemplate.startsWith('dark') ? '#f1f5f9' : '#0f172a';
+    tempContainer.style.boxSizing = 'border-box';
+    tempContainer.style.overflow = 'hidden';
+
+    // 1. PDF Background if present
+    if (page.backgroundImageData) {
+      const bgImg = document.createElement('img');
+      bgImg.src = page.backgroundImageData;
+      bgImg.style.position = 'absolute';
+      bgImg.style.inset = '0';
+      bgImg.style.width = '100%';
+      bgImg.style.height = '100%';
+      bgImg.style.objectFit = 'contain';
+      tempContainer.appendChild(bgImg);
+    }
+
+    // 2. Word Rich Text content
+    const contentDiv = document.createElement('div');
+    contentDiv.style.width = '100%';
+    contentDiv.style.minHeight = `${page.height}px`;
+    contentDiv.style.padding = '64px 60px';
+    contentDiv.style.boxSizing = 'border-box';
+    contentDiv.style.fontFamily = 'system-ui, -apple-system, sans-serif';
+    contentDiv.style.lineHeight = '1.7';
+    contentDiv.innerHTML = page.contentHtml || '';
+    tempContainer.appendChild(contentDiv);
+
+    // 3. Floating Images
+    if (page.images) {
+      for (const img of page.images) {
+        const floatImg = document.createElement('img');
+        floatImg.src = img.src;
+        floatImg.style.position = 'absolute';
+        floatImg.style.left = `${img.x}px`;
+        floatImg.style.top = `${img.y}px`;
+        floatImg.style.width = `${img.width}px`;
+        floatImg.style.height = `${img.height}px`;
+        floatImg.style.objectFit = 'cover';
+        floatImg.style.borderRadius = '8px';
+        tempContainer.appendChild(floatImg);
+      }
+    }
+
+    document.body.appendChild(tempContainer);
+
+    try {
+      const renderedCanvas = await html2canvas(tempContainer, {
+        scale: 1.5,
+        useCORS: true,
+        backgroundColor: paperTemplate.startsWith('dark') ? '#1e293b' : '#ffffff'
+      });
+
+      document.body.removeChild(tempContainer);
+
+      // Superimpose Apple Pencil ink strokes
+      const ctx = renderedCanvas.getContext('2d');
+      if (ctx && page.strokes) {
+        ctx.save();
+        ctx.scale(1.5, 1.5);
+        for (const stroke of page.strokes) {
+          drawStrokeToContext(ctx, stroke);
+        }
+        ctx.restore();
+      }
+
+      return renderedCanvas;
+    } catch (e) {
+      console.warn('html2canvas render failed, falling back to 2D canvas', e);
+      document.body.removeChild(tempContainer);
+    }
+  }
+
+  // Fallback direct 2D canvas rendering
   const canvas = document.createElement('canvas');
   canvas.width = page.width;
   canvas.height = page.height;
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Canvas context not available');
 
-  // 1. Draw Paper Background
-  if (page.backgroundType === 'pdf' || page.backgroundType === 'image' || page.backgroundImageData) {
-    if (page.backgroundImageData) {
-      await new Promise<void>((resolve, reject) => {
+  ctx.fillStyle = paperTemplate.startsWith('dark') ? '#1e293b' : '#ffffff';
+  ctx.fillRect(0, 0, page.width, page.height);
+
+  if (page.backgroundImageData) {
+    await new Promise<void>((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0, page.width, page.height);
+        resolve();
+      };
+      img.onerror = reject;
+      img.src = page.backgroundImageData!;
+    });
+  }
+
+  // Draw floating images
+  if (page.images) {
+    for (const floatImg of page.images) {
+      await new Promise<void>((resolve) => {
         const img = new Image();
         img.onload = () => {
-          ctx.drawImage(img, 0, 0, page.width, page.height);
+          ctx.drawImage(img, floatImg.x, floatImg.y, floatImg.width, floatImg.height);
           resolve();
         };
-        img.onerror = reject;
-        img.src = page.backgroundImageData!;
+        img.onerror = () => resolve();
+        img.src = floatImg.src;
       });
-    } else {
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, page.width, page.height);
-    }
-  } else {
-    // Standard template
-    const isDark = paperTemplate.startsWith('dark-');
-    ctx.fillStyle = isDark ? '#1e293b' : '#ffffff';
-    ctx.fillRect(0, 0, page.width, page.height);
-
-    // Draw lines/grid if template requires
-    if (paperTemplate.includes('ruled')) {
-      ctx.strokeStyle = isDark ? '#334155' : '#e2e8f0';
-      ctx.lineWidth = 1;
-      for (let y = 32; y < page.height; y += 32) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(page.width, y);
-        ctx.stroke();
-      }
-    } else if (paperTemplate.includes('grid')) {
-      ctx.strokeStyle = isDark ? '#334155' : '#e2e8f0';
-      ctx.lineWidth = 1;
-      for (let x = 24; x < page.width; x += 24) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, page.height);
-        ctx.stroke();
-      }
-      for (let y = 24; y < page.height; y += 24) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(page.width, y);
-        ctx.stroke();
-      }
-    } else if (paperTemplate.includes('dots')) {
-      ctx.fillStyle = isDark ? '#475569' : '#cbd5e1';
-      for (let x = 24; x < page.width; x += 24) {
-        for (let y = 24; y < page.height; y += 24) {
-          ctx.beginPath();
-          ctx.arc(x, y, 1.5, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
     }
   }
 
-  // 2. Draw Text Blocks
-  for (const block of page.textBlocks) {
-    ctx.save();
-    ctx.font = `${block.fontSize}px ${block.fontFamily || 'system-ui, sans-serif'}`;
-    ctx.fillStyle = block.color;
-    
-    // Multi-line support
-    const lines = block.text.split('\n');
-    let currentY = block.y + block.fontSize;
-    for (const line of lines) {
-      ctx.fillText(line, block.x, currentY);
-      currentY += block.fontSize * 1.3;
+  // Draw Strokes
+  if (page.strokes) {
+    for (const stroke of page.strokes) {
+      drawStrokeToContext(ctx, stroke);
     }
-    ctx.restore();
-  }
-
-  // 3. Draw Digital Ink Strokes (Apple Pencil annotations)
-  for (const stroke of page.strokes) {
-    drawStrokeToContext(ctx, stroke);
   }
 
   return canvas;

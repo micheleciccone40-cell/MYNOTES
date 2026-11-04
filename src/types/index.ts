@@ -1,4 +1,4 @@
-export type ToolType = 'pen' | 'highlighter' | 'eraser' | 'line' | 'rect' | 'circle' | 'text' | 'lasso';
+export type ToolType = 'text' | 'pen' | 'highlighter' | 'eraser' | 'line' | 'rect' | 'circle';
 
 export type PaperTemplate = 
   | 'blank' 
@@ -7,13 +7,16 @@ export type PaperTemplate =
   | 'dots' 
   | 'dark-blank' 
   | 'dark-ruled' 
-  | 'dark-grid' 
-  | 'dark-dots';
+  | 'dark-grid';
 
-export interface Point {
+export interface FloatingImage {
+  id: string;
+  src: string;
   x: number;
   y: number;
-  pressure?: number;
+  width: number;
+  height: number;
+  rotation?: number;
 }
 
 export interface Stroke {
@@ -25,29 +28,20 @@ export interface Stroke {
   points: [number, number, number][]; // [x, y, pressure]
 }
 
-export interface TextBlock {
-  id: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  text: string;
-  fontSize: number;
-  color: string;
-  fontFamily: string;
-  isEditing?: boolean;
-}
-
 export interface Page {
   id: string;
   pageNumber: number;
   backgroundType: 'template' | 'pdf' | 'image' | 'word';
   pdfPageNumber?: number;
-  backgroundImageData?: string; // Data URL of PDF page or image
+  backgroundImageData?: string;
   width: number;
   height: number;
+  // Word-style continuous rich text content (no disjointed blocks)
+  contentHtml?: string;
+  // Freeform images that can be placed and moved anywhere
+  images: FloatingImage[];
+  // Hand-drawn Apple Pencil ink strokes and annotations
   strokes: Stroke[];
-  textBlocks: TextBlock[];
 }
 
 export interface Notebook {
@@ -56,7 +50,7 @@ export interface Notebook {
   folderId: string | null;
   createdAt: number;
   updatedAt: number;
-  paperTemplate: PaperTemplate;
+  paperTemplate: PaperTemplate; // Default: 'blank'
   coverColor: string;
   pages: Page[];
   tags: string[];
