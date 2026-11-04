@@ -17,7 +17,8 @@ import { NewNotebookModal } from './components/NewNotebookModal';
 export function App() {
   const [folders, setFolders] = useState<Folder[]>([]);
   const [notebooks, setNotebooks] = useState<Notebook[]>([]);
-  const [selectedFolderId, setSelectedFolderId] = useState<string | 'all' | 'favorites' | 'shared' | 'trash'>('all');
+  const [selectedFolderId, setSelectedFolderId] = useState<string | 'all' | 'favorites' | 'books' | 'shared' | 'trash'>('all');
+  const [importModalMode, setImportModalMode] = useState<'book' | 'convert'>('book');
   const [isZenMode, setIsZenMode] = useState<boolean>(false);
   const [zoom, setZoom] = useState<number>(1);
   const [activeNotebookId, setActiveNotebookId] = useState<string | null>(null);
@@ -354,6 +355,25 @@ export function App() {
     setActiveTool('text');
   };
 
+  const handleOpenImportBook = () => {
+    setImportModalMode('book');
+    setIsImportModalOpen(true);
+  };
+
+  const handleOpenImportConvert = () => {
+    setImportModalMode('convert');
+    setIsImportModalOpen(true);
+  };
+
+  const handleImportBookComplete = async (bookNotebook: Notebook) => {
+    await db.notebooks.put(bookNotebook);
+    await refreshData();
+    setActiveNotebookId(bookNotebook.id);
+    setCurrentPageIndex(0);
+    setActiveTool('highlighter');
+    syncService.triggerAutoSync(800);
+  };
+
   const handleImportComplete = async (result: ImportResult) => {
     const now = Date.now();
     const targetFolder = ['all', 'favorites', 'shared'].includes(selectedFolderId) ? null : (selectedFolderId as string);
@@ -636,7 +656,8 @@ export function App() {
             }}
             onDeleteFolderClick={handleDeleteFolder}
             onOpenSyncModal={() => setIsSyncModalOpen(true)}
-            onOpenImportModal={() => setIsImportModalOpen(true)}
+            onOpenImportModal={handleOpenImportConvert}
+            onOpenImportBookModal={handleOpenImportBook}
             onMoveNotebook={handleMoveNotebook}
           />
 
@@ -658,7 +679,8 @@ export function App() {
               setFolderToEdit(null);
               setIsFolderModalOpen(true);
             }}
-            onOpenImportModal={() => setIsImportModalOpen(true)}
+            onOpenImportModal={handleOpenImportConvert}
+            onOpenImportBookModal={handleOpenImportBook}
             onOpenSyncModal={() => setIsSyncModalOpen(true)}
             onToggleFavorite={handleToggleFavorite}
             onDeleteNotebook={handleDeleteNotebook}
@@ -689,8 +711,10 @@ export function App() {
 
       <ImportModal
         isOpen={isImportModalOpen}
+        initialMode={importModalMode}
         onClose={() => setIsImportModalOpen(false)}
         onImportComplete={handleImportComplete}
+        onImportBookComplete={handleImportBookComplete}
       />
 
       <SyncModal

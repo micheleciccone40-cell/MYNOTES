@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import type { Page, Stroke, FloatingImage, ToolType } from '../types';
 import { drawStrokeToContext, isPointNearStroke, straightenHighlighterPoints } from '../utils/drawing';
+import { pdfBookManager } from '../services/pdfBookManager';
 import { Undo2, Redo2, Trash2, Move, Plus } from 'lucide-react';
 
 interface DocumentEditorProps {
@@ -268,8 +269,50 @@ const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
   zoom = 1,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const pdfCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const richEditorRef = useRef<HTMLDivElement | null>(null);
+
+  const isBookPage = page.backgroundType === 'pdf' && !!page.bookPdfId;
+  const [isVisible, setIsVisible] = useState(pageIndex < 2);
+  const [isPdfRendered, setIsPdfRendered] = useState(false);
+
+  // Lazy render observer to keep iPad memory low even with 400+ page books!
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      setIsVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0];
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+        } else if (pageIndex >= 3) {
+          // Offload canvas when very far from viewport to preserve iPad memory
+          setIsVisible(false);
+        }
+      },
+      { rootMargin: '600px 0px' }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [pageIndex]);
+
+  // Render raw PDF page when visible
+  useEffect(() => {
+    if (!isVisible || !isBookPage || !page.bookPdfId || !pdfCanvasRef.current) return;
+    let isCancelled = false;
+    pdfBookManager.renderPageToCanvas(page.bookPdfId, page.pageNumber, pdfCanvasRef.current, page.width)
+      .then(() => {
+        if (!isCancelled) setIsPdfRendered(true);
+      })
+      .catch((err) => {
+        if (!isCancelled) console.warn('Render error:', err);
+      });
+    return () => { isCancelled = true; };
+  }, [isVisible, isBookPage, page.bookPdfId, page.pageNumber, page.width]);
 
   const isDrawingRef = useRef<boolean>(false);
   const currentPointsRef = useRef<[number, number, number][]>([]);
@@ -512,23 +555,23 @@ const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
         className="flex items-center justify-between text-[11px] text-slate-500 font-mono mb-1 transition-all"
         style={{ width: `${page.width * zoom}px` }}
       >
-        <span>Pagina {pageIndex + 1} di {totalPages}</span>
+        <span>{isBookPage ? 'Libro' : 'Pagina'} {pageIndex + 1} di {totalPages}</span>
         <span className="opacity-0 group-hover/page:opacity-100 transition-opacity text-slate-400">
-          Formato Word A4 • {Math.round(zoom * 100)}%
+          {isBookPage ? 'PDF Fedele Originale' : 'Formato Word A4'} • {Math.round(zoom * 100)}%
         </span>
       </div>
 
       {/* 
         TRUE WORD ZOOM ARCHITECTURE:
         Outer container holds layout space for the scaled page (width: page.width * zoom).
-        Inner sheet keeps fixed 820px width so text NEVER reflows, and is scaled via CSS transform!
+        Inner sheet keeps fixed width so strokes and background never shift, scaled via CSS transform!
       */}
       <div
         style={{
           width: `${page.width * zoom}px`,
           height: `${page.height * zoom}px`,
         }}
-        className="relative overflow-hidden rounded shadow-[0_20px_50px_rgba(0,0,0,0.65)] bg-transparent transition-size duration-75"
+        className="relative overflow-hidden rounded shadow-[0_20px_50px_rgba(0,0,0,0.65)] bg-white transition-size duration-75"
       >
         <div
           ref={containerRef}
@@ -540,40 +583,54 @@ const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
             transformOrigin: 'top left',
           }}
           onClick={() => {
-            if (activeTool === 'text' && richEditorRef.current) {
+            if (!isBookPage && activeTool === 'text' && richEditorRef.current) {
               richEditorRef.current.focus();
             }
           }}
         >
-          {/* PDF Background (if raster/scanned PDF) */}
-          {page.backgroundImageData && (
+          {/* High-Fidelity Vector Book PDF Canvas (Crisp 100% original layout) */}
+          {isBookPage ? (
+            <div className="absolute inset-0 w-full h-full bg-white flex items-center justify-center">
+              <canvas
+                ref={pdfCanvasRef}
+                className="w-full h-full object-contain pointer-events-none"
+              />
+              {!isPdfRendered && (
+                <div className="absolute inset-0 flex items-center justify-center bg-slate-900/5">
+                  <span className="text-[11px] text-slate-400 font-mono">Caricamento pagina {page.pageNumber}...</span>
+                </div>
+              )}
+            </div>
+          ) : page.backgroundImageData ? (
             <img
               src={page.backgroundImageData}
               alt={`Pagina ${page.pageNumber}`}
               className="absolute inset-0 w-full h-full object-contain pointer-events-none"
               draggable={false}
             />
-          )}
+          ) : null}
 
-          {/* Real Word Rich Text Surface (NO text reflow on zoom) */}
-          <div
-            ref={richEditorRef}
-            contentEditable={activeTool === 'text'}
-            suppressContentEditableWarning
-            onInput={handleContentInput}
-            onBlur={handleContentInput}
-            style={{
-              minHeight: `${page.height}px`,
-              padding: '64px 60px',
-              outline: 'none',
-              color: paperTemplate.startsWith('dark') ? '#f1f5f9' : '#0f172a',
-              fontSize: '16px',
-              lineHeight: '1.7',
-              fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-            }}
-            className="w-full prose max-w-none cursor-text leading-relaxed select-text"
-            dangerouslySetInnerHTML={{ __html: page.contentHtml || '<p><br></p>' }}
-          />
+          {/* Real Word Rich Text Surface (Hidden for books, enabled for Word docs) */}
+          {!isBookPage && (
+            <div
+              ref={richEditorRef}
+              contentEditable={activeTool === 'text'}
+              suppressContentEditableWarning
+              onInput={handleContentInput}
+              onBlur={handleContentInput}
+              style={{
+                minHeight: `${page.height}px`,
+                padding: '64px 60px',
+                outline: 'none',
+                color: paperTemplate.startsWith('dark') ? '#f1f5f9' : '#0f172a',
+                fontSize: '16px',
+                lineHeight: '1.7',
+                fontFamily: 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+              }}
+              className="w-full prose max-w-none cursor-text leading-relaxed select-text"
+              dangerouslySetInnerHTML={{ __html: page.contentHtml || '<p><br></p>' }}
+            />
+          )}
 
           {/* Freeform Floating Images */}
           {(page.images || []).map((img) => {

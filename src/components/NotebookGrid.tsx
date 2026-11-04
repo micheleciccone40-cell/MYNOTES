@@ -29,7 +29,7 @@ interface NotebookGridProps {
   notebooks: Notebook[];
   allNotebooks?: Notebook[];
   folders: Folder[];
-  currentFolderId: string | 'all' | 'favorites' | 'shared' | 'trash';
+  currentFolderId: string | 'all' | 'favorites' | 'books' | 'shared' | 'trash';
   currentFolderName: string;
   onOpenNotebook: (notebookId: string) => void;
   onCreateNotebook: () => void;
@@ -41,7 +41,8 @@ interface NotebookGridProps {
   onDuplicateNotebook: (notebookId: string) => void;
   onMoveNotebook: (notebookId: string, folderId: string | null) => void;
   onExportPdfDirect: (notebook: Notebook) => void;
-  onSelectFolder: (folderId: string | 'all') => void;
+  onSelectFolder: (folderId: string | 'all' | 'favorites' | 'books' | 'shared' | 'trash') => void;
+  onOpenImportBookModal?: () => void;
   onOpenMobileSidebar: () => void;
   onRestoreNotebook?: (notebookId: string) => void;
   onEmptyTrash?: () => void;

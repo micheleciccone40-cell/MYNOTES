@@ -1,10 +1,21 @@
 import Dexie, { type Table } from 'dexie';
 import type { Folder, Notebook } from '../types';
 
+export interface StoredPdfFile {
+  id: string;
+  name: string;
+  size: number;
+  data: ArrayBuffer;
+  totalPages: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
 export class PadNotesDatabase extends Dexie {
   folders!: Table<Folder, string>;
   notebooks!: Table<Notebook, string>;
   settings!: Table<{ key: string; value: any }, string>;
+  pdfFiles!: Table<StoredPdfFile, string>;
 
   constructor() {
     super('PadNotesDB');
@@ -12,6 +23,12 @@ export class PadNotesDatabase extends Dexie {
       folders: 'id, parentId, updatedAt',
       notebooks: 'id, folderId, updatedAt, isFavorite',
       settings: 'key'
+    });
+    this.version(2).stores({
+      folders: 'id, parentId, updatedAt',
+      notebooks: 'id, folderId, updatedAt, isFavorite, isBook',
+      settings: 'key',
+      pdfFiles: 'id, updatedAt'
     });
   }
 }

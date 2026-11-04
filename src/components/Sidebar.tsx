@@ -1,5 +1,6 @@
 import React from 'react';
 import {
+  BookOpen,
   Folder as FolderIcon,
   FolderPlus,
   Star,
@@ -17,17 +18,18 @@ import type { Folder, SyncStatus } from '../types';
 
 interface SidebarProps {
   folders: Folder[];
-  selectedFolderId: string | 'all' | 'favorites' | 'shared' | 'trash';
+  selectedFolderId: string | 'all' | 'favorites' | 'books' | 'shared' | 'trash';
   counts: { [key: string]: number };
   syncStatus: SyncStatus;
   isOpenMobile: boolean;
   onCloseMobile: () => void;
-  onSelectFolder: (id: string | 'all' | 'favorites' | 'shared' | 'trash') => void;
+  onSelectFolder: (id: string | 'all' | 'favorites' | 'books' | 'shared' | 'trash') => void;
   onCreateFolderClick: () => void;
   onEditFolderClick: (folder: Folder) => void;
   onDeleteFolderClick: (folderId: string) => void;
   onOpenSyncModal: () => void;
   onOpenImportModal: () => void;
+  onOpenImportBookModal?: () => void;
   onMoveNotebook?: (notebookId: string, folderId: string | null) => void;
 }
 
@@ -131,6 +133,25 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
             <span className={`text-xs ${selectedFolderId === 'all' ? 'text-blue-100 font-bold' : 'text-slate-400'}`}>
               {counts['all'] || 0}
+            </span>
+          </button>
+
+          {/* Libri & Manuali (PDF Fedele) */}
+          <button
+            type="button"
+            onClick={() => { onSelectFolder('books'); onCloseMobile(); }}
+            className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              selectedFolderId === 'books'
+                ? 'bg-emerald-600 text-white shadow-md'
+                : 'text-slate-300 hover:bg-[#1a1c23] hover:text-white'
+            }`}
+          >
+            <div className="flex items-center gap-3">
+              <BookOpen className={`w-5 h-5 ${selectedFolderId === 'books' ? 'text-white' : 'text-emerald-400'}`} />
+              <span>Libri & Manuali</span>
+            </div>
+            <span className={`text-xs px-2 py-0.5 rounded-full ${selectedFolderId === 'books' ? 'bg-emerald-700 text-white' : 'bg-emerald-500/15 text-emerald-400 font-semibold'}`}>
+              {counts['books'] || 0}
             </span>
           </button>
 

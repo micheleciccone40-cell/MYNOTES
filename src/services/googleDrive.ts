@@ -32,12 +32,30 @@ export class GoogleDriveSyncService {
   private accessToken: string | null = null;
   private tokenClient: any = null;
   private isPreinitialized = false;
+  private autoSyncTimer: any = null;
+  private isAutoSyncing = false;
+  private hasPendingSync = false;
+  private listeners: Set<(status: SyncStatus) => void> = new Set();
 
   constructor() {
     if (typeof window !== 'undefined') {
       // Eagerly pre-load GIS script in background so popups are never blocked by Safari
       setTimeout(() => this.preinitialize(), 800);
+
+      // Automatic recovery: when internet returns, flush any pending changes immediately
+      window.addEventListener('online', () => {
+        if (this.hasPendingSync) {
+          console.log('Online detected: flushing auto-sync to Google Drive...');
+          this.triggerAutoSync(800);
+        }
+      });
     }
+  }
+
+  subscribe(listener: (status: SyncStatus) => void): () => void {
+    this.listeners.add(listener);
+    this.getSyncMetadata().then(listener);
+    return () => this.listeners.delete(listener);
   }
 
   async getClientId(): Promise<string> {
@@ -61,7 +79,9 @@ export class GoogleDriveSyncService {
       isSyncing: false,
       lastSyncedAt: null,
       userEmail: undefined,
-      error: null
+      error: null,
+      autoSyncEnabled: true,
+      hasPendingChanges: false
     };
   }
 
@@ -69,6 +89,67 @@ export class GoogleDriveSyncService {
     const current = await this.getSyncMetadata();
     const updated = { ...current, ...status };
     await db.settings.put({ key: SYNC_SETTINGS_KEY, value: updated });
+    for (const listener of this.listeners) {
+      try {
+        listener(updated);
+      } catch (e) {
+        console.error('Sync listener error:', e);
+      }
+    }
+  }
+
+  /**
+   * AUTOMATIC BACKGROUND SYNC ENGINE:
+   * Called on every edit, create, delete, move or rename.
+   * Debounced so typing and Apple Pencil strokes don't overwhelm Google API rate limits.
+   * If offline, queues the change and automatically flushes when connection is back!
+   */
+  triggerAutoSync(debounceMs = 2500): void {
+    const isOnline = typeof navigator !== 'undefined' ? navigator.onLine : true;
+    if (!isOnline) {
+      this.hasPendingSync = true;
+      this.saveSyncMetadata({
+        isSyncing: false,
+        hasPendingChanges: true,
+        error: 'Offline • Modifiche salvate in locale (in attesa di connessione)'
+      });
+      return;
+    }
+
+    if (this.autoSyncTimer) {
+      clearTimeout(this.autoSyncTimer);
+    }
+
+    this.hasPendingSync = true;
+    this.autoSyncTimer = setTimeout(async () => {
+      this.autoSyncTimer = null;
+      const meta = await this.getSyncMetadata();
+      if (!meta.isConnected) {
+        // Not connected yet; changes safely stored in IndexedDB
+        return;
+      }
+
+      if (this.isAutoSyncing) {
+        // Another sync in flight; leave hasPendingSync true
+        return;
+      }
+
+      this.isAutoSyncing = true;
+      try {
+        await this.syncToGoogleDrive();
+        this.hasPendingSync = false;
+        await this.saveSyncMetadata({
+          isSyncing: false,
+          hasPendingChanges: false,
+          error: null
+        });
+      } catch (err: any) {
+        console.warn('Background auto-sync deferred:', err?.message || err);
+        this.hasPendingSync = true;
+      } finally {
+        this.isAutoSyncing = false;
+      }
+    }, debounceMs);
   }
 
   /**
@@ -206,6 +287,9 @@ export class GoogleDriveSyncService {
               userEmail: email,
               error: null
             });
+
+            // Trigger immediate sync to flush any pending local creations/edits
+            this.triggerAutoSync(600);
 
             resolve(response.access_token);
           },

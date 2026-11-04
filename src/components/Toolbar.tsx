@@ -25,9 +25,13 @@ import {
   Maximize2,
   Minimize2,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  BookOpen,
+  Cloud,
+  RefreshCw,
+  CheckCircle2
 } from 'lucide-react';
-import type { ToolType, PaperTemplate } from '../types';
+import type { ToolType, PaperTemplate, SyncStatus } from '../types';
 
 interface ToolbarProps {
   title: string;
@@ -65,6 +69,9 @@ interface ToolbarProps {
   isZenMode?: boolean;
   onToggleZenMode?: () => void;
   wordCount?: number;
+  isBook?: boolean;
+  syncStatus?: SyncStatus;
+  onOpenSyncModal?: () => void;
 }
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 40];
@@ -127,6 +134,9 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   isZenMode = false,
   onToggleZenMode,
   wordCount,
+  isBook = false,
+  syncStatus,
+  onOpenSyncModal,
 }) => {
   const [activeTab, setActiveTab] = useState<'text' | 'pencil'>('text');
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
@@ -175,54 +185,121 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               className="px-2.5 py-1 bg-[#20222a] border border-blue-500 rounded-lg text-white font-semibold text-xs focus:outline-none"
             />
           ) : (
-            <button
-              type="button"
-              onClick={() => {
-                setTempTitle(title);
-                setIsEditingTitle(true);
-              }}
-              className="font-semibold text-white hover:text-blue-400 px-2 py-1 rounded-md hover:bg-[#20222a] transition-colors truncate max-w-[200px] sm:max-w-[320px] text-left"
-              title="Rinomina documento"
-            >
-              {title}
-            </button>
+            <div className="flex items-center gap-2 max-w-[220px] sm:max-w-[360px] truncate">
+              {isBook && (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1 shrink-0">
+                  <BookOpen className="w-3 h-3 text-emerald-400" /> Libro
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setTempTitle(title);
+                  setIsEditingTitle(true);
+                }}
+                className="font-semibold text-white hover:text-blue-400 px-2 py-1 rounded-md hover:bg-[#20222a] transition-colors truncate text-left"
+                title="Rinomina"
+              >
+                {title}
+              </button>
+            </div>
           )}
 
-          {/* Segmented Mode: Word Formatting vs Apple Pencil */}
-          <div className="flex items-center bg-[#0e0f13] p-0.5 rounded-xl border border-[#262833]">
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('text');
-                onSelectTool('text');
-              }}
-              className={`px-3 py-1 rounded-lg font-medium transition-all ${
-                activeTab === 'text'
-                  ? 'bg-[#252834] text-white shadow-sm font-semibold'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Testo & Word
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setActiveTab('pencil');
-                if (activeTool === 'text') onSelectTool('pen');
-              }}
-              className={`px-3 py-1 rounded-lg font-medium transition-all ${
-                activeTab === 'pencil'
-                  ? 'bg-[#252834] text-white shadow-sm font-semibold'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Apple Pencil
-            </button>
-          </div>
+          {/* Segmented Mode: Word Formatting vs Apple Pencil / Book Annotations */}
+          {isBook ? (
+            <div className="flex items-center bg-[#0e0f13] p-0.5 rounded-xl border border-emerald-500/30">
+              <button
+                type="button"
+                onClick={() => onSelectTool('highlighter')}
+                className={`px-3 py-1 rounded-lg font-medium transition-all flex items-center gap-1.5 ${
+                  activeTool === 'highlighter'
+                    ? 'bg-[#fde047] text-slate-900 font-bold shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Highlighter className="w-3.5 h-3.5" />
+                <span>Evidenziatore</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onSelectTool('pen')}
+                className={`px-3 py-1 rounded-lg font-medium transition-all flex items-center gap-1.5 ${
+                  activeTool === 'pen'
+                    ? 'bg-blue-600 text-white font-bold shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                <Pen className="w-3.5 h-3.5" />
+                <span>Penna & Note</span>
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center bg-[#0e0f13] p-0.5 rounded-xl border border-[#262833]">
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('text');
+                  onSelectTool('text');
+                }}
+                className={`px-3 py-1 rounded-lg font-medium transition-all ${
+                  activeTab === 'text'
+                    ? 'bg-[#252834] text-white shadow-sm font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Testo & Word
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('pencil');
+                  if (activeTool === 'text') onSelectTool('pen');
+                }}
+                className={`px-3 py-1 rounded-lg font-medium transition-all ${
+                  activeTab === 'pencil'
+                    ? 'bg-[#252834] text-white shadow-sm font-semibold'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Apple Pencil
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Right Top Actions */}
         <div className="flex items-center gap-2">
+          {/* Cloud Auto-Sync Live Indicator */}
+          {syncStatus && onOpenSyncModal && (
+            <button
+              type="button"
+              onClick={onOpenSyncModal}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 bg-[#181922] hover:bg-[#20222f] text-slate-300 hover:text-white rounded-lg text-xs font-medium border border-[#2c2d3a] transition-all"
+              title="Google Drive Cloud Auto-Sync"
+            >
+              {syncStatus.isSyncing ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 text-blue-400 animate-spin" />
+                  <span className="hidden sm:inline text-blue-300 text-[11px]">Drive...</span>
+                </>
+              ) : syncStatus.hasPendingChanges ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                  <span className="hidden sm:inline text-amber-300 text-[11px]">In coda</span>
+                </>
+              ) : syncStatus.isConnected ? (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                  <span className="hidden sm:inline text-emerald-300 text-[11px]">Drive</span>
+                </>
+              ) : (
+                <>
+                  <Cloud className="w-3.5 h-3.5 text-slate-400" />
+                  <span className="hidden sm:inline text-slate-400 text-[11px]">Cloud</span>
+                </>
+              )}
+            </button>
+          )}
           {/* Paper Template Selector */}
           <div className="relative">
             <button
@@ -441,7 +518,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       {/* 2. Word-Style Ribbon Toolbar (hidden in Focus Mode) */}
       {!isZenMode && (
       <div className="px-4 py-2 flex flex-wrap items-center justify-between gap-3 bg-[#13141a]">
-        {activeTab === 'text' ? (
+        {(activeTab === 'text' && !isBook) ? (
           /* WORD RICH TEXT FORMATTING CONTROLS */
           <div className="flex items-center flex-wrap gap-2 text-xs">
             {/* Font Family */}

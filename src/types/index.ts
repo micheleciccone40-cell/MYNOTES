@@ -32,6 +32,7 @@ export interface Page {
   id: string;
   pageNumber: number;
   backgroundType: 'template' | 'pdf' | 'image' | 'word';
+  bookPdfId?: string;
   pdfPageNumber?: number;
   backgroundImageData?: string;
   width: number;
@@ -57,6 +58,9 @@ export interface Notebook {
   isFavorite?: boolean;
   isDeleted?: boolean;
   deletedAt?: number;
+  isBook?: boolean; // True for raw unconverted PDF books!
+  bookPdfId?: string; // Pointer to raw PDF in IndexedDB
+  coverThumbnail?: string; // Pre-rendered crisp cover thumbnail
 }
 
 export interface Folder {
@@ -74,4 +78,6 @@ export interface SyncStatus {
   lastSyncedAt: number | null;
   userEmail?: string;
   error?: string | null;
+  autoSyncEnabled?: boolean;
+  hasPendingChanges?: boolean;
 }
