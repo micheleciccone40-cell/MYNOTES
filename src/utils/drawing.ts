@@ -9,17 +9,79 @@ export interface StrokeOptions {
   simulatePressure?: boolean;
 }
 
+/**
+ * Straightens highlighter points naturally:
+ * "più o meno dritta, non per forza drittissima"
+ * - Pulls intermediate points towards the linear direction by ~78%.
+ * - If mostly horizontal (text swipe), flattens vertical wobble to align with text.
+ * - Retains ~22% organic hand curvature and exact natural endpoints.
+ */
+export function straightenHighlighterPoints(
+  points: [number, number, number][]
+): [number, number, number][] {
+  if (!points || points.length < 3) return points;
+
+  const start = points[0];
+  const end = points[points.length - 1];
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  const lengthSq = dx * dx + dy * dy;
+
+  // Very short stroke (dot / tap) - don't alter
+  if (lengthSq < 100) return points;
+
+  const length = Math.sqrt(lengthSq);
+  // Predominantly horizontal swipe (common when highlighting text lines)
+  const isHorizontal = Math.abs(dy) / length < 0.35;
+  const pullFactor = isHorizontal ? 0.82 : 0.74;
+
+  // 1. Projection and blend towards straight trajectory
+  const blended: [number, number, number][] = points.map((pt, i) => {
+    if (i === 0 || i === points.length - 1) return pt;
+
+    const [x, y, pressure] = pt;
+    const t = Math.max(0, Math.min(1, ((x - start[0]) * dx + (y - start[1]) * dy) / lengthSq));
+    const projX = start[0] + t * dx;
+    const projY = start[1] + t * dy;
+
+    const smoothedX = x * (1 - pullFactor) + projX * pullFactor;
+    const smoothedY = y * (1 - pullFactor) + projY * pullFactor;
+
+    return [smoothedX, smoothedY, pressure];
+  });
+
+  // 2. Moving average smoothing (window size 3) to eliminate hand tremors
+  const result: [number, number, number][] = [];
+  for (let i = 0; i < blended.length; i++) {
+    if (i === 0 || i === blended.length - 1) {
+      result.push(blended[i]);
+    } else {
+      const prev = blended[i - 1];
+      const curr = blended[i];
+      const next = blended[i + 1];
+      result.push([
+        (prev[0] + curr[0] * 2 + next[0]) / 4,
+        (prev[1] + curr[1] * 2 + next[1]) / 4,
+        curr[2]
+      ]);
+    }
+  }
+
+  return result;
+}
+
 export function computeStrokeOutline(
   points: [number, number, number][],
   tool: 'pen' | 'highlighter',
   size: number
 ): number[][] {
   const isHighlighter = tool === 'highlighter';
-  return getStroke(points, {
-    size: isHighlighter ? size * 2.2 : size,
-    thinning: isHighlighter ? 0.1 : 0.6,
-    smoothing: 0.65,
-    streamline: 0.55,
+  const pts = isHighlighter ? straightenHighlighterPoints(points) : points;
+  return getStroke(pts, {
+    size: isHighlighter ? size * 1.5 : size,
+    thinning: isHighlighter ? 0.05 : 0.6,
+    smoothing: isHighlighter ? 0.8 : 0.65,
+    streamline: isHighlighter ? 0.7 : 0.55,
     easing: (t) => t,
     simulatePressure: false,
     last: true,
@@ -79,7 +141,8 @@ export function drawStrokeToContext(ctx: CanvasRenderingContext2D, stroke: Strok
   // Freehand pen or highlighter
   const isHighlighter = stroke.tool === 'highlighter';
   if (isHighlighter) {
-    ctx.globalAlpha = stroke.opacity || 0.38;
+    // Giallo pastello opaco / morbido che non copre il testo
+    ctx.globalAlpha = stroke.opacity || 0.48;
     ctx.globalCompositeOperation = 'multiply';
   } else {
     ctx.globalAlpha = stroke.opacity || 1.0;

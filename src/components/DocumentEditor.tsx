@@ -1,6 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import type { Page, Stroke, FloatingImage, ToolType } from '../types';
-import { drawStrokeToContext, isPointNearStroke } from '../utils/drawing';
+import { drawStrokeToContext, isPointNearStroke, straightenHighlighterPoints } from '../utils/drawing';
 import { Undo2, Redo2, Trash2, Move, Plus } from 'lucide-react';
 
 interface DocumentEditorProps {
@@ -282,7 +282,7 @@ const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
         tool: activeTool as any,
         color: strokeColor,
         size: strokeSize,
-        opacity: activeTool === 'highlighter' ? 0.38 : 1,
+        opacity: activeTool === 'highlighter' ? 0.48 : 1,
         points: currentPointsRef.current
       };
       redrawCanvas(tempStroke);
@@ -310,7 +310,7 @@ const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
       tool: activeTool as any,
       color: strokeColor,
       size: strokeSize,
-      opacity: activeTool === 'highlighter' ? 0.38 : 1,
+      opacity: activeTool === 'highlighter' ? 0.48 : 1,
       points: currentPointsRef.current
     };
     redrawCanvas(tempStroke);
@@ -326,13 +326,18 @@ const SingleDocumentPage: React.FC<SingleDocumentPageProps> = ({
     if (activeTool === 'eraser') return;
 
     if (currentPointsRef.current.length > 0) {
+      // Intelligently semi-straighten highlighter lines ("più o meno dritta")
+      const finalPoints = activeTool === 'highlighter'
+        ? straightenHighlighterPoints(currentPointsRef.current)
+        : [...currentPointsRef.current];
+
       const finalStroke: Stroke = {
         id: `stroke-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         tool: activeTool as any,
         color: strokeColor,
         size: strokeSize,
-        opacity: activeTool === 'highlighter' ? 0.38 : 1,
-        points: [...currentPointsRef.current]
+        opacity: activeTool === 'highlighter' ? 0.48 : 1,
+        points: finalPoints
       };
       currentPointsRef.current = [];
       onAddStroke(finalStroke);

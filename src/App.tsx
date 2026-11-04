@@ -440,8 +440,21 @@ export function App() {
       ? 'Taccuini Preferiti'
       : currentFolder?.name || 'Cartella';
 
+  const handleSelectTool = (tool: ToolType) => {
+    setActiveTool(tool);
+    if (tool === 'highlighter') {
+      setStrokeColor('#fde047'); // Default giallo pastello opaco
+      setStrokeSize(20);
+    } else if (tool === 'pen') {
+      if (strokeColor === '#fde047') {
+        setStrokeColor('#0f172a');
+      }
+      setStrokeSize(3);
+    }
+  };
+
   return (
-    <div className="h-full w-full flex flex-col bg-[#0c0d10] text-slate-100 overflow-hidden font-sans select-none">
+    <div className="h-full w-full flex flex-col bg-black text-slate-100 overflow-hidden font-sans select-none">
       {/* Network Offline / Auto-sync Toast */}
       {networkToast && (
         <div className="fixed top-3 left-1/2 -translate-x-1/2 z-50 pointer-events-none bg-[#181a24]/95 backdrop-blur-md text-white px-4 py-2 rounded-full text-xs font-semibold shadow-2xl border border-white/20 flex items-center gap-2">
@@ -464,7 +477,7 @@ export function App() {
             canRedo={redoStack.length > 0}
             isExportingPdf={isExportingPdf}
             onChangeTitle={handleChangeTitle}
-            onSelectTool={setActiveTool}
+            onSelectTool={handleSelectTool}
             onChangeColor={setStrokeColor}
             onChangeSize={setStrokeSize}
             onToggleApplePencilOnly={() => setApplePencilOnly(!applePencilOnly)}

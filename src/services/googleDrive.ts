@@ -17,13 +17,19 @@ export interface WorkspaceBackup {
 const SYNC_SETTINGS_KEY = 'google_drive_sync_settings';
 const DEFAULT_CLIENT_ID_KEY = 'gdrive_client_id';
 
+// Default Google OAuth Client ID provided by user
+export const DEFAULT_GOOGLE_CLIENT_ID = '138214289325-ovuuesoedmgu7669cs25cr99alqgmfij.apps.googleusercontent.com';
+
 export class GoogleDriveSyncService {
   private accessToken: string | null = null;
   private tokenClient: any = null;
 
   async getClientId(): Promise<string> {
     const item = await db.settings.get(DEFAULT_CLIENT_ID_KEY);
-    return item ? item.value : '';
+    if (item && item.value && item.value.trim().length > 0) {
+      return item.value.trim();
+    }
+    return DEFAULT_GOOGLE_CLIENT_ID;
   }
 
   async setClientId(clientId: string): Promise<void> {
@@ -67,7 +73,16 @@ export class GoogleDriveSyncService {
           scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/userinfo.email',
           callback: async (response: any) => {
             if (response.error !== undefined) {
-              reject(response);
+              let errorMsg = `Errore autenticazione Google (${response.error})`;
+              if (response.error === 'popup_closed_by_user') {
+                errorMsg = 'Accesso annullato (la finestra di Google è stata chiusa). Riprova.';
+              } else if (response.error === 'access_denied') {
+                errorMsg = 'Accesso negato: assicurati di aver aggiunto la tua email Google tra gli "Utenti di prova" (Test users) nella schermata di consenso OAuth su Google Cloud Console.';
+              } else if (response.error === 'idpiframe_initialization_failed' || response.error_subtype === 'origin_mismatch') {
+                errorMsg = 'Origine non autorizzata: aggiungi il dominio https://mynotessss-ko3s9cq97-michele-s-projects9.vercel.app nelle "Origini JavaScript autorizzate" su Google Cloud Console.';
+              }
+              await this.saveSyncMetadata({ isSyncing: false, error: errorMsg });
+              reject(new Error(errorMsg));
               return;
             }
             this.accessToken = response.access_token;
@@ -96,7 +111,8 @@ export class GoogleDriveSyncService {
           },
         });
 
-        this.tokenClient.requestAccessToken({ prompt: 'consent' });
+        // Request token; prompt user if needed
+        this.tokenClient.requestAccessToken({ prompt: '' });
       } catch (err: any) {
         reject(err);
       }
@@ -248,6 +264,7 @@ export class GoogleDriveSyncService {
       if (backup.folders && backup.folders.length > 0) {
         await db.folders.bulkPut(backup.folders);
       }
+
       if (backup.notebooks && backup.notebooks.length > 0) {
         await db.notebooks.bulkPut(backup.notebooks);
       }
@@ -262,7 +279,7 @@ export class GoogleDriveSyncService {
     } catch (err: any) {
       await this.saveSyncMetadata({
         isSyncing: false,
-        error: err.message || 'Errore durante il ripristino da Google Drive'
+        error: err.message || 'Errore durante il download dal Cloud'
       });
       throw err;
     }

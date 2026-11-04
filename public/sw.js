@@ -1,5 +1,5 @@
 // PadNotes Service Worker - Network-First for fresh updates, Cache fallback for 100% offline
-const CACHE_NAME = 'padnotes-v4';
+const CACHE_NAME = 'padnotes-v5';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

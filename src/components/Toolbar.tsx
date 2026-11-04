@@ -21,8 +21,7 @@ import {
   ArrowLeft,
   ShieldCheck,
   Hand,
-  Plus,
-  Palette
+  Plus
 } from 'lucide-react';
 import type { ToolType, PaperTemplate } from '../types';
 
@@ -59,6 +58,23 @@ interface ToolbarProps {
 }
 
 const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 40];
+
+export const HIGHLIGHTER_PASTEL_COLORS = [
+  { color: '#fde047', label: 'Giallo Pastello (Default)' },
+  { color: '#86efac', label: 'Verde Menta Pastello' },
+  { color: '#7dd3fc', label: 'Azzurro Pastello' },
+  { color: '#f9a8d4', label: 'Rosa Pastello' },
+  { color: '#d8b4fe', label: 'Lilla Pastello' },
+  { color: '#fed7aa', label: 'Albicocca Pastello' },
+];
+
+export const PEN_COLORS = [
+  { color: '#0f172a', label: 'Nero Grafite' },
+  { color: '#1d4ed8', label: 'Blu Notte' },
+  { color: '#b91c1c', label: 'Rosso Scuro' },
+  { color: '#15803d', label: 'Verde Bosco' },
+  { color: '#475569', label: 'Grigio Medio' },
+];
 
 const FORMAL_TEXT_COLORS = [
   '#0f172a', // Nero Grafite
@@ -99,7 +115,6 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'text' | 'pencil'>('text');
   const [showTemplateMenu, setShowTemplateMenu] = useState(false);
-  const [showColorPicker, setShowColorPicker] = useState(false);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [tempTitle, setTempTitle] = useState(title);
 
@@ -445,7 +460,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
               onClick={() => onSelectTool('highlighter')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all ${
                 activeTool === 'highlighter'
-                  ? 'bg-amber-500 text-black font-semibold shadow-sm'
+                  ? 'bg-[#fde047] text-slate-900 font-semibold shadow-sm'
                   : 'bg-[#1e2029] text-slate-300 hover:bg-[#282b37]'
               }`}
             >
@@ -469,52 +484,57 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
             <div className="h-4 w-[1px] bg-[#282b36] mx-1" />
 
-            {/* Color Palette */}
-            <div className="relative flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setShowColorPicker(!showColorPicker)}
-                className="w-5 h-5 rounded-full border border-white/40 shadow-sm flex items-center justify-center"
-                style={{ backgroundColor: strokeColor }}
-                title="Colore inchiostro"
-              >
-                <Palette className="w-2.5 h-2.5 text-white drop-shadow" />
-              </button>
+            {/* Contextual Color Palette (Pastels for Highlighter, Classic for Pen) */}
+            {activeTool === 'highlighter' ? (
+              <div className="flex items-center gap-1.5 bg-[#181a22] px-2 py-1 rounded-xl border border-[#2d303e]">
+                <span className="text-[10px] text-amber-300/80 font-medium mr-0.5">Pastello:</span>
+                {HIGHLIGHTER_PASTEL_COLORS.map((item) => (
+                  <button
+                    key={item.color}
+                    type="button"
+                    onClick={() => onChangeColor(item.color)}
+                    className={`w-5 h-5 rounded-full transition-transform hover:scale-125 border ${
+                      strokeColor.toLowerCase() === item.color.toLowerCase()
+                        ? 'ring-2 ring-white ring-offset-1 ring-offset-black scale-110 border-white'
+                        : 'border-black/30'
+                    }`}
+                    style={{ backgroundColor: item.color }}
+                    title={item.label}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5 bg-[#181a22] px-2 py-1 rounded-xl border border-[#2d303e]">
+                {PEN_COLORS.map((item) => (
+                  <button
+                    key={item.color}
+                    type="button"
+                    onClick={() => onChangeColor(item.color)}
+                    className={`w-5 h-5 rounded-full transition-transform hover:scale-125 border ${
+                      strokeColor.toLowerCase() === item.color.toLowerCase()
+                        ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-black scale-110 border-white'
+                        : 'border-slate-700'
+                    }`}
+                    style={{ backgroundColor: item.color }}
+                    title={item.label}
+                  />
+                ))}
+              </div>
+            )}
 
-              {showColorPicker && (
-                <div className="absolute top-full mt-2 left-0 bg-[#1e2029] border border-[#2d303e] rounded-xl shadow-2xl p-2 z-50 flex gap-1.5">
-                  {['#0f172a', '#2563eb', '#dc2626', '#16a34a', '#d97706', '#9333ea'].map((c) => (
-                    <button
-                      key={c}
-                      type="button"
-                      onClick={() => {
-                        onChangeColor(c);
-                        setShowColorPicker(false);
-                      }}
-                      className="w-5 h-5 rounded-full border border-slate-600 hover:scale-125 transition-transform"
-                      style={{ backgroundColor: c }}
-                    />
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Stroke Thickness */}
+            {/* Stroke Thickness (Contextual: 14/20/28px for Highlighter, 2/4/6px for Pen) */}
             <div className="flex items-center gap-1 bg-[#1e2029] rounded-lg p-1 border border-[#2d303e]">
-              {[2, 5, 9].map((sz) => (
+              {(activeTool === 'highlighter' ? [14, 20, 28] : [2, 4, 6]).map((sz) => (
                 <button
                   key={sz}
                   type="button"
                   onClick={() => onChangeSize(sz)}
-                  className={`w-5 h-5 rounded flex items-center justify-center ${
-                    strokeSize === sz ? 'bg-blue-600 text-white' : 'text-slate-400 hover:text-white'
+                  className={`px-2 py-0.5 text-[11px] font-mono rounded flex items-center justify-center transition-colors ${
+                    strokeSize === sz ? 'bg-blue-600 text-white font-bold' : 'text-slate-400 hover:text-white'
                   }`}
                   title={`Spessore ${sz}px`}
                 >
-                  <div
-                    className="rounded-full bg-current"
-                    style={{ width: `${sz + 2}px`, height: `${sz + 2}px` }}
-                  />
+                  {sz}px
                 </button>
               ))}
             </div>
